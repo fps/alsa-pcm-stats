@@ -11,15 +11,103 @@
 #include <iostream>
 #include <vector>
 
+int period_size_frames;
+int num_periods;
+int num_channels;
+int sampling_rate_hz;
+std::string pcm_device_name;
+int priority;
+int buffer_size;
+unsigned short *buffer;
+
+void setup_pcm_device(snd_pcm_t *pcm) {
+  int ret;
+
+  // #################### alsa pcm device hardware parameters
+  snd_pcm_hw_params_t *params;
+  snd_pcm_hw_params_alloca(&params);
+  ret = snd_pcm_hw_params_any(pcm, params);
+
+  ret = snd_pcm_hw_params_set_channels(pcm, params, 2);
+  if (ret < 0) {
+    printf("set channels: %s\n", snd_strerror(ret));
+    exit(EXIT_FAILURE);
+  }
+
+  ret = snd_pcm_hw_params_set_access(pcm, params, SND_PCM_ACCESS_RW_INTERLEAVED);
+  if (ret < 0) {
+    printf("set access: %s\n", snd_strerror(ret));
+    exit(EXIT_FAILURE);
+  }
+
+  ret = snd_pcm_hw_params_set_format(pcm, params, SND_PCM_FORMAT_S16);
+  if (ret < 0) {
+    printf("set format: %s\n", snd_strerror(ret));
+    exit(EXIT_FAILURE);
+  }
+
+  ret = snd_pcm_hw_params_set_rate(pcm, params, sampling_rate_hz, 0);
+  if (ret < 0) {
+    printf("set rate (%d): %s\n", sampling_rate_hz, snd_strerror(ret));
+    exit(EXIT_FAILURE);
+  }
+
+
+  for (int index = 0; index < buffer_size; ++index) {
+    buffer[index] = 0;
+  }
+
+  ret = snd_pcm_hw_params_set_buffer_size(pcm, params, buffer_size);
+  if (ret < 0) {
+    printf("set buffer size: %s\n", snd_strerror(ret));
+    exit(EXIT_FAILURE);
+  }
+
+  ret = snd_pcm_hw_params_set_period_size(pcm, params, period_size_frames, 0);
+  if (ret < 0) {
+    printf("set period size (%d): %s\n", period_size_frames, snd_strerror(ret));
+    exit(EXIT_FAILURE);
+  }
+
+  ret = snd_pcm_hw_params(pcm, params);
+  if (ret < 0) {
+    printf("set hw params: %s\n", snd_strerror(ret));
+    exit(EXIT_FAILURE);
+  }
+
+  // #################### alsa pcm device software params
+  snd_pcm_sw_params_t *sw_params;
+  snd_pcm_sw_params_alloca(&sw_params);
+
+  ret = snd_pcm_sw_params_current(pcm, sw_params);
+  if (ret < 0) {
+    printf("sw params current: %s\n", snd_strerror(ret));
+    exit(EXIT_FAILURE);
+  }
+
+
+  ret = snd_pcm_sw_params_set_avail_min(pcm, sw_params, period_size_frames);
+  if (ret < 0) {
+    printf("set avail min: %s\n", snd_strerror(ret));
+    exit(EXIT_FAILURE);
+  }
+
+  ret = snd_pcm_sw_params_set_start_threshold(pcm, sw_params, period_size_frames);
+  if (ret < 0) {
+    printf("set start threshold: %s\n", snd_strerror(ret));
+    exit(EXIT_FAILURE);
+  }
+
+  snd_pcm_sw_params(pcm, sw_params);
+  if (ret < 0) {
+    printf("sw params: %s\n", snd_strerror(ret));
+    exit(EXIT_FAILURE);
+  }
+
+}
+
 int main(int argc, char *argv[]) {
   namespace po = boost::program_options;
-
-  int period_size_frames;
-  int num_periods; 
-  int num_channels;
-  int sampling_rate_hz;
-  std::string pcm_device_name;
-  int priority;
 
   po::options_description options_desc("Options");
   options_desc.add_options()
@@ -41,7 +129,9 @@ int main(int argc, char *argv[]) {
     return EXIT_SUCCESS;
   }
 
-  const int buffer_size = num_periods * period_size_frames;
+  buffer_size = num_periods * period_size_frames;
+
+  buffer = new unsigned short[buffer_size];
 
   int ret;
 
@@ -54,101 +144,37 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  // #################### alsa pcm device setup
-  snd_pcm_t *pcm;
-  ret = snd_pcm_open(&pcm, pcm_device_name.c_str(), SND_PCM_STREAM_PLAYBACK, SND_PCM_NONBLOCK);
+  // #################### alsa pcm device open
+  snd_pcm_t *playback_pcm;
+  ret = snd_pcm_open(&playback_pcm, pcm_device_name.c_str(), SND_PCM_STREAM_PLAYBACK, SND_PCM_NONBLOCK);
   if (ret < 0) {
-    printf("open: %s\n", snd_strerror(ret));
+    printf("failed to open playback device: %s\n", snd_strerror(ret));
     return EXIT_FAILURE;
   }
 
-  // #################### alsa pcm device hardware parameters
-  snd_pcm_hw_params_t *params;
-  snd_pcm_hw_params_alloca(&params);
-  ret = snd_pcm_hw_params_any(pcm, params);
-
-  ret = snd_pcm_hw_params_set_channels(pcm, params, 2);
+  snd_pcm_t *capture_pcm;
+  ret = snd_pcm_open(&capture_pcm, pcm_device_name.c_str(), SND_PCM_STREAM_CAPTURE, SND_PCM_NONBLOCK);
   if (ret < 0) {
-    printf("set channels: %s\n", snd_strerror(ret));
+    printf("failed to open capture device: %s\n", snd_strerror(ret));
     return EXIT_FAILURE;
   }
 
-  ret = snd_pcm_hw_params_set_access(pcm, params, SND_PCM_ACCESS_RW_INTERLEAVED);
-  if (ret < 0) {
-    printf("set access: %s\n", snd_strerror(ret));
-    return EXIT_FAILURE;
-  }
+  setup_pcm_device(playback_pcm);
+  setup_pcm_device(capture_pcm);
 
-  ret = snd_pcm_hw_params_set_format(pcm, params, SND_PCM_FORMAT_S16);
-  if (ret < 0) {
-    printf("set format: %s\n", snd_strerror(ret));
-    return EXIT_FAILURE;
-  }
-
-  ret = snd_pcm_hw_params_set_rate(pcm, params, sampling_rate_hz, 0);
-  if (ret < 0) {
-    printf("set rate (%d): %s\n", sampling_rate_hz, snd_strerror(ret));
-    return EXIT_FAILURE;
-  }
-
-  unsigned short buffer[buffer_size];
-
-  for (int index = 0; index < buffer_size; ++index) {
-    buffer[index] = 0;
-  }
-
-  ret = snd_pcm_hw_params_set_buffer_size(pcm, params, buffer_size);
-  if (ret < 0) {
-    printf("set buffer size: %s\n", snd_strerror(ret));
-    return EXIT_FAILURE;
-  }
-
-  ret = snd_pcm_hw_params_set_period_size(pcm, params, period_size_frames, 0);
-  if (ret < 0) {
-    printf("set period size (%d): %s\n", period_size_frames, snd_strerror(ret));
-    return EXIT_FAILURE;
-  }
-
-  ret = snd_pcm_hw_params(pcm, params);
-  if (ret < 0) {
-    printf("set hw params: %s\n", snd_strerror(ret));
-    return EXIT_FAILURE;
-  }
-
-  // #################### alsa pcm device software params
-  snd_pcm_sw_params_t *sw_params;
-  snd_pcm_sw_params_alloca(&sw_params);
-
-  ret = snd_pcm_sw_params_current(pcm, sw_params);
-  if (ret < 0) {
-    printf("sw params current: %s\n", snd_strerror(ret));
-    return EXIT_FAILURE;
-  }
-
-
-  ret = snd_pcm_sw_params_set_avail_min(pcm, sw_params, period_size_frames);
-  if (ret < 0) {
-    printf("set avail min: %s\n", snd_strerror(ret));
-    return EXIT_FAILURE;
-  }
-
-  ret = snd_pcm_sw_params_set_start_threshold(pcm, sw_params, period_size_frames);
-  if (ret < 0) {
-    printf("set start threshold: %s\n", snd_strerror(ret));
-    return EXIT_FAILURE;
-  }
-
-  snd_pcm_sw_params(pcm, sw_params);
-  if (ret < 0) {
-    printf("sw params: %s\n", snd_strerror(ret));
-    return EXIT_FAILURE;
-  }
-
-  ret = snd_pcm_wait(pcm, 1000);
+  /*
+  ret = snd_pcm_wait(playback_pcm, 1000);
   if (ret < 0) {
     printf("wait: %s\n", snd_strerror(ret));
     return EXIT_FAILURE;
   }
+
+  ret = snd_pcm_wait(capture_pcm, 1000);
+  if (ret < 0) {
+    printf("wait: %s\n", snd_strerror(ret));
+    return EXIT_FAILURE;
+  }
+  */
 
   // the device starts automatically once the start threshold is reached
   // ret = snd_pcm_start(pcm);
@@ -158,23 +184,23 @@ int main(int argc, char *argv[]) {
   // }
 
   // #################### alsa pcm device poll descriptors
-  int pfds_count = snd_pcm_poll_descriptors_count(pcm);
+  int pfds_count = snd_pcm_poll_descriptors_count(playback_pcm);
   if (pfds_count < 1) {
     printf("poll descriptors count less than one\n");
     return EXIT_FAILURE;
   }
 
   struct pollfd pfds[pfds_count];
-  int num_pfds = snd_pcm_poll_descriptors(pcm, pfds, pfds_count);
+  int num_pfds = snd_pcm_poll_descriptors(playback_pcm, pfds, pfds_count);
 
   for (int index = 0; index < 1000000; ++index)  {
-    snd_pcm_sframes_t avail = snd_pcm_avail_update(pcm); 
+    snd_pcm_sframes_t avail = snd_pcm_avail_update(playback_pcm);
     printf("avail: %d\n", (int)avail);
 
     if (avail < 0) {
       printf("avail: %s\n", snd_strerror(avail));
       // return EXIT_FAILURE;
-      ret = snd_pcm_prepare(pcm);
+      ret = snd_pcm_prepare(playback_pcm);
       if (ret < 0) {
         printf("pcm prepare: %s\n", snd_strerror(ret));
       }
@@ -183,11 +209,11 @@ int main(int argc, char *argv[]) {
 
     if (avail >= period_size_frames) {
 	  // ret = snd_pcm_readi(pcm, buffer, period_size_frames);
-      ret = snd_pcm_writei(pcm, buffer, period_size_frames);
+      ret = snd_pcm_writei(playback_pcm, buffer, period_size_frames);
       printf("written: %d\n", ret);
       if (ret < 0) {
         printf("writei: %s\n", snd_strerror(ret));
-        ret = snd_pcm_prepare(pcm);
+        ret = snd_pcm_prepare(playback_pcm);
         if (ret < 0) {
           printf("pcm prepare: %s\n", snd_strerror(ret));
         }
@@ -207,7 +233,7 @@ int main(int argc, char *argv[]) {
       }
   
       unsigned short revents;
-      ret = snd_pcm_poll_descriptors_revents(pcm, pfds, pfds_count, &revents);
+      ret = snd_pcm_poll_descriptors_revents(playback_pcm, pfds, pfds_count, &revents);
       if (revents & POLLOUT) {
         break;
       }
