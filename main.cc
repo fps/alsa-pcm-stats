@@ -20,8 +20,8 @@ int priority;
 int buffer_size;
 unsigned short *buffer;
 
-void setup_pcm_device(snd_pcm_t *pcm) {
-  int ret;
+int setup_pcm_device(snd_pcm_t *pcm) {
+  int ret = 0;
 
   // #################### alsa pcm device hardware parameters
   snd_pcm_hw_params_t *params;
@@ -30,26 +30,26 @@ void setup_pcm_device(snd_pcm_t *pcm) {
 
   ret = snd_pcm_hw_params_set_channels(pcm, params, 2);
   if (ret < 0) {
-    printf("set channels: %s\n", snd_strerror(ret));
-    exit(EXIT_FAILURE);
+    printf("snd_pcm_hw_params_set_channels: %s\n", snd_strerror(ret));
+    return EXIT_FAILURE;
   }
 
   ret = snd_pcm_hw_params_set_access(pcm, params, SND_PCM_ACCESS_RW_INTERLEAVED);
   if (ret < 0) {
-    printf("set access: %s\n", snd_strerror(ret));
-    exit(EXIT_FAILURE);
+    printf("snd_pcm_hw_params_set_access: %s\n", snd_strerror(ret));
+    return EXIT_FAILURE;
   }
 
   ret = snd_pcm_hw_params_set_format(pcm, params, SND_PCM_FORMAT_S16);
   if (ret < 0) {
-    printf("set format: %s\n", snd_strerror(ret));
-    exit(EXIT_FAILURE);
+    printf("snd_pcm_hw_params_set_format: %s\n", snd_strerror(ret));
+    return EXIT_FAILURE;
   }
 
   ret = snd_pcm_hw_params_set_rate(pcm, params, sampling_rate_hz, 0);
   if (ret < 0) {
-    printf("set rate (%d): %s\n", sampling_rate_hz, snd_strerror(ret));
-    exit(EXIT_FAILURE);
+    printf("snd_pcm_hw_params_set_rate (%d): %s\n", sampling_rate_hz, snd_strerror(ret));
+    return EXIT_FAILURE;
   }
 
 
@@ -59,20 +59,20 @@ void setup_pcm_device(snd_pcm_t *pcm) {
 
   ret = snd_pcm_hw_params_set_buffer_size(pcm, params, buffer_size);
   if (ret < 0) {
-    printf("set buffer size: %s\n", snd_strerror(ret));
-    exit(EXIT_FAILURE);
+    printf("snd_pcm_hw_params_set_buffer_size: %s\n", snd_strerror(ret));
+    return EXIT_FAILURE;
   }
 
   ret = snd_pcm_hw_params_set_period_size(pcm, params, period_size_frames, 0);
   if (ret < 0) {
-    printf("set period size (%d): %s\n", period_size_frames, snd_strerror(ret));
-    exit(EXIT_FAILURE);
+    printf("snd_pcm_hw_params_set_period_size (%d): %s\n", period_size_frames, snd_strerror(ret));
+    return EXIT_FAILURE;
   }
 
   ret = snd_pcm_hw_params(pcm, params);
   if (ret < 0) {
-    printf("set hw params: %s\n", snd_strerror(ret));
-    exit(EXIT_FAILURE);
+    printf("snd_pcm_hw_params: %s\n", snd_strerror(ret));
+    return EXIT_FAILURE;
   }
 
   // #################### alsa pcm device software params
@@ -81,29 +81,30 @@ void setup_pcm_device(snd_pcm_t *pcm) {
 
   ret = snd_pcm_sw_params_current(pcm, sw_params);
   if (ret < 0) {
-    printf("sw params current: %s\n", snd_strerror(ret));
-    exit(EXIT_FAILURE);
+    printf("snd_pcm_sw_params_current: %s\n", snd_strerror(ret));
+    return EXIT_FAILURE;
   }
 
 
   ret = snd_pcm_sw_params_set_avail_min(pcm, sw_params, period_size_frames);
   if (ret < 0) {
-    printf("set avail min: %s\n", snd_strerror(ret));
-    exit(EXIT_FAILURE);
+    printf("snd_pcm_sw_params_set_avail_min: %s\n", snd_strerror(ret));
+    return EXIT_FAILURE;
   }
 
   ret = snd_pcm_sw_params_set_start_threshold(pcm, sw_params, period_size_frames);
   if (ret < 0) {
-    printf("set start threshold: %s\n", snd_strerror(ret));
-    exit(EXIT_FAILURE);
+    printf("snd_pcm_sw_params_set_start_threshold: %s\n", snd_strerror(ret));
+    return EXIT_FAILURE;
   }
 
   snd_pcm_sw_params(pcm, sw_params);
   if (ret < 0) {
-    printf("sw params: %s\n", snd_strerror(ret));
-    exit(EXIT_FAILURE);
+    printf("snd_pcm_sw_params: %s\n", snd_strerror(ret));
+    return EXIT_FAILURE;
   }
 
+  return EXIT_SUCCESS;
 }
 
 int main(int argc, char *argv[]) {
@@ -148,33 +149,46 @@ int main(int argc, char *argv[]) {
   snd_pcm_t *playback_pcm;
   ret = snd_pcm_open(&playback_pcm, pcm_device_name.c_str(), SND_PCM_STREAM_PLAYBACK, SND_PCM_NONBLOCK);
   if (ret < 0) {
-    printf("failed to open playback device: %s\n", snd_strerror(ret));
+    printf("snd_pcm_open: %s\n", snd_strerror(ret));
     return EXIT_FAILURE;
   }
 
   snd_pcm_t *capture_pcm;
   ret = snd_pcm_open(&capture_pcm, pcm_device_name.c_str(), SND_PCM_STREAM_CAPTURE, SND_PCM_NONBLOCK);
   if (ret < 0) {
-    printf("failed to open capture device: %s\n", snd_strerror(ret));
+    printf("snd_pcm_open: %s\n", snd_strerror(ret));
     return EXIT_FAILURE;
   }
 
-  setup_pcm_device(playback_pcm);
-  setup_pcm_device(capture_pcm);
+  ret = setup_pcm_device(playback_pcm);
+  if (ret != 0) {
+    printf("setup_pcm_device: %s\n", "Failed to setup playback device");
+    return EXIT_FAILURE;
+  }
+  ret = setup_pcm_device(capture_pcm);
+  if (ret != 0) {
+    printf("setup_pcm_device: %s\n", "Failed to setup capture device");
+    return EXIT_FAILURE;
+  }
 
-  /*
+  ret = snd_pcm_link(playback_pcm, capture_pcm);
+  if (ret < 0) {
+    printf("snd_pcm_link: %s\n", snd_strerror(ret));
+    return EXIT_FAILURE;
+  }
+
+
   ret = snd_pcm_wait(playback_pcm, 1000);
   if (ret < 0) {
-    printf("wait: %s\n", snd_strerror(ret));
+    printf("snd_pcm_wait: %s\n", snd_strerror(ret));
     return EXIT_FAILURE;
   }
 
   ret = snd_pcm_wait(capture_pcm, 1000);
   if (ret < 0) {
-    printf("wait: %s\n", snd_strerror(ret));
+    printf("snd_pcm_wait: %s\n", snd_strerror(ret));
     return EXIT_FAILURE;
   }
-  */
 
   // the device starts automatically once the start threshold is reached
   // ret = snd_pcm_start(pcm);
@@ -184,57 +198,121 @@ int main(int argc, char *argv[]) {
   // }
 
   // #################### alsa pcm device poll descriptors
-  int pfds_count = snd_pcm_poll_descriptors_count(playback_pcm);
-  if (pfds_count < 1) {
+  int playback_pfds_count = snd_pcm_poll_descriptors_count(playback_pcm);
+  if (playback_pfds_count < 1) {
     printf("poll descriptors count less than one\n");
     return EXIT_FAILURE;
   }
 
-  struct pollfd pfds[pfds_count];
-  int num_pfds = snd_pcm_poll_descriptors(playback_pcm, pfds, pfds_count);
+  struct pollfd playback_pfds[playback_pfds_count];
+  int filled_playback_pfds = snd_pcm_poll_descriptors(playback_pcm, playback_pfds, playback_pfds_count);
 
-  for (int index = 0; index < 1000000; ++index)  {
-    snd_pcm_sframes_t avail = snd_pcm_avail_update(playback_pcm);
-    printf("avail: %d\n", (int)avail);
 
-    if (avail < 0) {
-      printf("avail: %s\n", snd_strerror(avail));
-      // return EXIT_FAILURE;
+
+  int capture_pfds_count = snd_pcm_poll_descriptors_count(capture_pcm);
+  if (capture_pfds_count < 1) {
+    printf("poll descriptors count less than one\n");
+    return EXIT_FAILURE;
+  }
+
+  struct pollfd capture_pfds[capture_pfds_count];
+  int filled_capture_pfds = snd_pcm_poll_descriptors(capture_pcm, capture_pfds, capture_pfds_count);
+
+
+
+  struct pollfd pfds[filled_capture_pfds + filled_playback_pfds];
+
+  for (int index = 0; index < filled_playback_pfds; ++index) {
+    pfds[index] = playback_pfds[index];
+  }
+
+  for (int index = 0; index < filled_capture_pfds; ++index) {
+    pfds[index + filled_playback_pfds] = capture_pfds[index];
+  }
+
+
+  long long playback_total = 0;
+  long long capture_total = 0;
+
+  for (int index = 0; index < 30; ++index)  {
+    snd_pcm_sframes_t avail_playback = snd_pcm_avail_update(playback_pcm);
+    printf("available (playback): %d\n", (int)avail_playback);
+
+    snd_pcm_sframes_t avail_capture = snd_pcm_avail_update(capture_pcm);
+    printf("available (capture): %d\n", (int)avail_capture);
+
+    if (avail_playback < 0) {
+      printf("avail_playback: %s\n", snd_strerror(avail_playback));
+      return EXIT_FAILURE;
       ret = snd_pcm_prepare(playback_pcm);
       if (ret < 0) {
-        printf("pcm prepare: %s\n", snd_strerror(ret));
+        printf("snd_pcm_prepare: %s\n", snd_strerror(ret));
       }
-      continue;
     }
 
-    if (avail >= period_size_frames) {
+    if (avail_playback >= period_size_frames) {
 	  // ret = snd_pcm_readi(pcm, buffer, period_size_frames);
       ret = snd_pcm_writei(playback_pcm, buffer, period_size_frames);
       printf("written: %d\n", ret);
+      playback_total += period_size_frames;
+
       if (ret < 0) {
-        printf("writei: %s\n", snd_strerror(ret));
+        printf("snd_pcm_writei: %s\n", snd_strerror(ret));
+        return EXIT_FAILURE;
         ret = snd_pcm_prepare(playback_pcm);
         if (ret < 0) {
-          printf("pcm prepare: %s\n", snd_strerror(ret));
+          printf("snd_pcm_prepare: %s\n", snd_strerror(ret));
         }
-        continue;
       }
     }
  
-    while (1) {
-      ret = poll(pfds, num_pfds, 1000);
+    if (avail_capture < 0) {
+      printf("avail_capture: %s\n", snd_strerror(avail_capture));
+      // return EXIT_FAILURE;
+      ret = snd_pcm_prepare(capture_pcm);
+      if (ret < 0) {
+        printf("pcm prepare: %s\n", snd_strerror(ret));
+      }
+    }
+
+    if (avail_capture >= period_size_frames) {
+	  // ret = snd_pcm_readi(pcm, buffer, period_size_frames);
+      ret = snd_pcm_readi(capture_pcm, buffer, period_size_frames);
+      printf("read: %d\n", ret);
+      capture_total += period_size_frames;
+
+      if (ret < 0) {
+        printf("snd_pcm_readi: %s\n", snd_strerror(ret));
+        return EXIT_FAILURE;
+        ret = snd_pcm_prepare(capture_pcm);
+        if (ret < 0) {
+          printf("snd_pcm_prepare: %s\n", snd_strerror(ret));
+        }
+      }
+    }
+    // while (1) {
+      printf("polling...\n");
+      ret = poll(pfds, filled_playback_pfds+filled_capture_pfds, 1000);
       if (ret < 0) {
         printf("poll: %s\n", strerror(ret));
+        return(EXIT_FAILURE);
       }
 
       if (ret == 0) {
         printf("poll timeout\n");
+        return EXIT_FAILURE;
+      }
+      /*
+      unsigned short revents;
+      ret = snd_pcm_poll_descriptors_revents(playback_pcm, playback_pfds, playback_pfds_count, &revents);
+      if (ret < 0) {
+        printf("error getting returned events: %s\n", snd_strerror(ret));
+        return(EXIT_FAILURE);
+      }
+      if (revents & POLLOUT) {
         break;
       }
-  
-      unsigned short revents;
-      ret = snd_pcm_poll_descriptors_revents(playback_pcm, pfds, pfds_count, &revents);
-      if (revents & POLLOUT) {
+      if (revents & POLLIN) {
         break;
       }
       if (revents & POLLERR) {
@@ -242,8 +320,14 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
       }
       printf("polling again\n");
-    }
+      */
+    //}
   } 
+
+  printf("playback_total: %lld\n", playback_total);
+  printf("capture_total: %lld\n", capture_total);
+
+  delete buffer;
 
   return EXIT_SUCCESS;
 }
