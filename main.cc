@@ -22,8 +22,8 @@ int priority;
 int buffer_size;
 int sample_size;
 
-// typedef int32_t sample_t;
-typedef short sample_t;
+typedef int32_t sample_t;
+// typedef short sample_t;
 sample_t *buffer;
 
 struct data {
@@ -60,7 +60,7 @@ int setup_pcm_device(snd_pcm_t *pcm) {
     return EXIT_FAILURE;
   }
 
-  ret = snd_pcm_hw_params_set_format(pcm, params, SND_PCM_FORMAT_S16_LE);
+  ret = snd_pcm_hw_params_set_format(pcm, params, SND_PCM_FORMAT_S32_LE);
   if (ret < 0) {
     printf("snd_pcm_hw_params_set_format: %s\n", snd_strerror(ret));
     return EXIT_FAILURE;
@@ -282,8 +282,9 @@ int main(int argc, char *argv[]) {
       break;
     }
 
-    if (avail_playback >= period_size_frames) {
-      ret = snd_pcm_writei(playback_pcm, buffer, period_size_frames);
+    if (avail_playback > 0) {
+      // ret = snd_pcm_writei(playback_pcm, buffer, period_size_frames);
+      ret = snd_pcm_writei(playback_pcm, buffer, avail_playback);
 
       if (ret < 0) {
         printf("snd_pcm_writei: %s\n", snd_strerror(ret));
@@ -296,8 +297,10 @@ int main(int argc, char *argv[]) {
 			break;
     }
 
-    if (avail_capture >= period_size_frames) {
-      ret = snd_pcm_readi(capture_pcm, buffer, period_size_frames);
+    // if (avail_capture >= period_size_frames) {
+    if (avail_capture > 0) {
+      // ret = snd_pcm_readi(capture_pcm, buffer, period_size_frames);
+      ret = snd_pcm_readi(capture_pcm, buffer, avail_capture);
 
       if (ret < 0) {
         printf("snd_pcm_readi: %s\n", snd_strerror(ret));
@@ -325,7 +328,7 @@ int main(int argc, char *argv[]) {
   printf("   tv.sec   tv.nsec available-playback available-capture\n");
   for (int sample_index = 0; sample_index < sample_size; ++sample_index) {
     data data_sample = data_samples[sample_index];
-    printf("%9ld %9ld %18d %17d\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available);
+    printf("%09ld %09ld %018d %017d\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available);
   }
   delete buffer;
 
