@@ -33,6 +33,7 @@ struct data {
 
 
 int setup_pcm_device(snd_pcm_t *pcm) {
+  fprintf(stderr, "setting up pcm device...\n");
   int ret = 0;
 
   // #################### alsa pcm device hardware parameters
@@ -117,6 +118,7 @@ int setup_pcm_device(snd_pcm_t *pcm) {
     return EXIT_FAILURE;
   }
 
+  fprintf(stderr, "done.\n");
   return EXIT_SUCCESS;
 }
 
@@ -150,6 +152,8 @@ int main(int argc, char *argv[]) {
 
   int ret;
 
+  fprintf(stderr, "setting SCHED_FIFO at priority: %d\n", priority);
+
   // #################### scheduling and priority setup
   struct sched_param pthread_params;
   pthread_params.sched_priority = priority;
@@ -158,6 +162,8 @@ int main(int argc, char *argv[]) {
     printf("setschedparam: %s\n", strerror(ret));
     return EXIT_FAILURE;
   }
+
+  fprintf(stderr, "opening alsa pcm devices...\n");
 
   // #################### alsa pcm device open
   snd_pcm_t *playback_pcm;
@@ -192,6 +198,9 @@ int main(int argc, char *argv[]) {
   }
 
 
+  /*
+  fprintf(stderr, "waiting for pcm devices...\n");
+
   ret = snd_pcm_wait(playback_pcm, 1000);
   if (ret < 0) {
     printf("snd_pcm_wait: %s\n", snd_strerror(ret));
@@ -203,6 +212,7 @@ int main(int argc, char *argv[]) {
     printf("snd_pcm_wait: %s\n", snd_strerror(ret));
     return EXIT_FAILURE;
   }
+  */
 
   // the device starts automatically once the start threshold is reached
   // ret = snd_pcm_start(pcm);
@@ -250,7 +260,7 @@ int main(int argc, char *argv[]) {
 
   int sample_index = 0;
 
-  // printf("starting to sample...\n");
+  fprintf(stderr, "starting to sample...\n");
   while(true) {
     snd_pcm_sframes_t avail_playback = snd_pcm_avail_update(playback_pcm);
     snd_pcm_sframes_t avail_capture = snd_pcm_avail_update(capture_pcm);
@@ -303,11 +313,12 @@ int main(int argc, char *argv[]) {
     }
   } 
 
-  printf("done samplings...\n"); 
+  fprintf(stderr, "done sampling...\n"); 
 
+  printf("   tv.sec   tv.nsec available-capture available-playback\n");
   for (int sample_index = 0; sample_index < sample_size; ++sample_index) {
     data data_sample = data_samples[sample_index];
-    printf("%06ld %09ld %5d %5d\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available);
+    printf("%9ld %9ld %17d %18d\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available);
   }
   delete buffer;
 
