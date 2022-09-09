@@ -315,10 +315,10 @@ int main(int argc, char *argv[]) {
 
   fprintf(stderr, "done sampling...\n"); 
 
-  printf("   tv.sec   tv.nsec available-capture available-playback\n");
+  printf("   tv.sec   tv.nsec available-playback available-capture\n");
   for (int sample_index = 0; sample_index < sample_size; ++sample_index) {
     data data_sample = data_samples[sample_index];
-    printf("%9ld %9ld %17d %18d\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available);
+    printf("%9ld %9ld %18d %17d\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available);
   }
   delete buffer;
 
