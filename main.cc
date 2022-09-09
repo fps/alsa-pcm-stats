@@ -4,7 +4,9 @@
 #include <unistd.h>
 #include <poll.h>
 #include <errno.h>
+#include <stdint.h>
 #include <pthread.h>
+#include <time.h>
 
 #include <string>
 #include <boost/program_options.hpp>
@@ -18,7 +20,17 @@ int sampling_rate_hz;
 std::string pcm_device_name;
 int priority;
 int buffer_size;
-unsigned short *buffer;
+int sample_size;
+
+typedef int32_t sample_t;
+sample_t *buffer;
+
+struct data {
+  int playback_available;
+  int capture_available;
+  struct timespec wakeup_time;
+};
+
 
 int setup_pcm_device(snd_pcm_t *pcm) {
   int ret = 0;
@@ -40,7 +52,7 @@ int setup_pcm_device(snd_pcm_t *pcm) {
     return EXIT_FAILURE;
   }
 
-  ret = snd_pcm_hw_params_set_format(pcm, params, SND_PCM_FORMAT_S16);
+  ret = snd_pcm_hw_params_set_format(pcm, params, SND_PCM_FORMAT_S32_LE);
   if (ret < 0) {
     printf("snd_pcm_hw_params_set_format: %s\n", snd_strerror(ret));
     return EXIT_FAILURE;
@@ -119,6 +131,7 @@ int main(int argc, char *argv[]) {
     ("num-channels,c", po::value<int>(&num_channels)->default_value(1), "number of channels")
     ("pcm-device-name,d", po::value<std::string>(&pcm_device_name)->default_value("default"), "the ALSA pcm device name string")
     ("priority,P", po::value<int>(&priority)->default_value(70), "SCHED_FIFO priority")
+    ("sample-size,s", po::value<int>(&sample_size)->default_value(1000), "the number of samples to collect for stats (might be less due how to alsa works)")
   ;
 
   po::variables_map vm;
@@ -132,7 +145,7 @@ int main(int argc, char *argv[]) {
 
   buffer_size = num_periods * period_size_frames;
 
-  buffer = new unsigned short[buffer_size];
+  buffer = new sample_t[buffer_size];
 
   int ret;
 
@@ -230,17 +243,40 @@ int main(int argc, char *argv[]) {
     pfds[index + filled_playback_pfds] = capture_pfds[index];
   }
 
+  std::vector<data> data_samples(sample_size);
+
+  /*
+  std::vector<int> playback_available(sample_size);
+  std::vector<int> capture_available(sample_size);
+
+  std::vector<struct timespec> playback_wakeup_times(sample_size);
+  std::vector<struct timespec> capture_wakeup_times(sample_size);
 
   long long playback_total = 0;
   long long capture_total = 0;
 
-  for (int index = 0; index < 30; ++index)  {
+  long capture_periods = 0;
+  long playback_periods = 0;
+  */
+
+  struct timespec;
+
+  int sample_index = 0;
+
+  printf("starting to sample...\n");
+  // for (int index = 0; index < 30; ++index)  {
+  while(true) {
     snd_pcm_sframes_t avail_playback = snd_pcm_avail_update(playback_pcm);
-    printf("available (playback): %d\n", (int)avail_playback);
+    // printf("available (playback): %d\n", (int)avail_playback);
 
     snd_pcm_sframes_t avail_capture = snd_pcm_avail_update(capture_pcm);
-    printf("available (capture): %d\n", (int)avail_capture);
+    // printf("available (capture): %d\n", (int)avail_capture);
 
+    clock_gettime(CLOCK_MONOTONIC, &data_samples[sample_index].wakeup_time);
+    data_samples[sample_index].playback_available = avail_playback;
+    data_samples[sample_index].capture_available = avail_capture;
+
+    ++sample_index;
     if (avail_playback < 0) {
       printf("avail_playback: %s\n", snd_strerror(avail_playback));
       return EXIT_FAILURE;
@@ -251,10 +287,16 @@ int main(int argc, char *argv[]) {
     }
 
     if (avail_playback >= period_size_frames) {
-	  // ret = snd_pcm_readi(pcm, buffer, period_size_frames);
+      /*
+      clock_gettime(CLOCK_MONOTONIC, &playback_wakeup_times[playback_periods]);
+      playback_available[playback_periods] = avail_playback;
+      playback_periods += 1;
+      */
+
+      // ret = snd_pcm_readi(pcm, buffer, period_size_frames);
       ret = snd_pcm_writei(playback_pcm, buffer, period_size_frames);
-      printf("written: %d\n", ret);
-      playback_total += period_size_frames;
+      // printf("written: %d\n", ret);
+      // playback_total += period_size_frames;
 
       if (ret < 0) {
         printf("snd_pcm_writei: %s\n", snd_strerror(ret));
@@ -268,7 +310,7 @@ int main(int argc, char *argv[]) {
  
     if (avail_capture < 0) {
       printf("avail_capture: %s\n", snd_strerror(avail_capture));
-      // return EXIT_FAILURE;
+      return EXIT_FAILURE;
       ret = snd_pcm_prepare(capture_pcm);
       if (ret < 0) {
         printf("pcm prepare: %s\n", snd_strerror(ret));
@@ -276,10 +318,16 @@ int main(int argc, char *argv[]) {
     }
 
     if (avail_capture >= period_size_frames) {
+      /*
+      clock_gettime(CLOCK_MONOTONIC, &capture_wakeup_times[capture_periods]);
+      capture_available[capture_periods] = avail_capture;
+      capture_periods += 1;
+      */
+
 	  // ret = snd_pcm_readi(pcm, buffer, period_size_frames);
       ret = snd_pcm_readi(capture_pcm, buffer, period_size_frames);
-      printf("read: %d\n", ret);
-      capture_total += period_size_frames;
+      // printf("read: %d\n", ret);
+      // capture_total += period_size_frames;
 
       if (ret < 0) {
         printf("snd_pcm_readi: %s\n", snd_strerror(ret));
@@ -290,8 +338,18 @@ int main(int argc, char *argv[]) {
         }
       }
     }
+
+    /*
+    if (playback_periods >= sample_size || capture_periods >= sample_size) {
+      break;
+    }
+    */
+
+    if (sample_index >= sample_size) {
+      break;
+    }
     // while (1) {
-      printf("polling...\n");
+      // printf("polling...\n");
       ret = poll(pfds, filled_playback_pfds+filled_capture_pfds, 1000);
       if (ret < 0) {
         printf("poll: %s\n", strerror(ret));
@@ -324,9 +382,36 @@ int main(int argc, char *argv[]) {
     //}
   } 
 
-  printf("playback_total: %lld\n", playback_total);
-  printf("capture_total: %lld\n", capture_total);
+  printf("done samplings...\n"); 
 
+  /*
+  printf("playback total written (samples): %lld\n", playback_total);
+  printf("capture total read (samples): %lld\n", capture_total);
+
+  printf("playback periods: %ld\n", playback_periods);
+  printf("capture periods: %ld\n", capture_periods);
+
+  for (int index = 0; index < sample_size; ++index) {
+    printf("playback wakeup time (seconds, nanoseconds): %ld %ld\n", playback_wakeup_times[index].tv_sec, playback_wakeup_times[index].tv_nsec);
+  }
+  
+  for (int index = 0; index < sample_size; ++index) {
+    printf("capture wakeup time (seconds, nanoseconds): %ld %ld\n", capture_wakeup_times[index].tv_sec, capture_wakeup_times[index].tv_nsec);
+  }
+ 
+  for (int index = 0; index < sample_size; ++index) {
+    printf("playback available (samples): %d\n", playback_available[index]);
+  }
+
+  for (int index = 0; index < sample_size; ++index) {
+    printf("capture available (samples): %d\n", capture_available[index]);
+  }
+
+  */
+  for (int sample_index = 0; sample_index < sample_size; ++sample_index) {
+    data data_sample = data_samples[sample_index];
+    printf("%06ld %09ld %05d %05d\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available);
+  }
   delete buffer;
 
   return EXIT_SUCCESS;

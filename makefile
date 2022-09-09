@@ -1,4 +1,4 @@
-CXXFLAGS ?= -pthread -lboost_program_options -lasound
+CXXFLAGS ?= -Wall -pthread -lboost_program_options -lasound
 
 .phony: all
 
