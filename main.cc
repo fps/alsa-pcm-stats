@@ -22,13 +22,20 @@ int priority;
 int buffer_size;
 int sample_size;
 
-typedef int32_t sample_t;
+// typedef int32_t sample_t;
+typedef short sample_t;
 sample_t *buffer;
 
 struct data {
   int playback_available;
   int capture_available;
   struct timespec wakeup_time;
+
+  data() :
+	playback_available(-1),
+	capture_available(-1) {
+
+  }
 };
 
 
@@ -53,7 +60,7 @@ int setup_pcm_device(snd_pcm_t *pcm) {
     return EXIT_FAILURE;
   }
 
-  ret = snd_pcm_hw_params_set_format(pcm, params, SND_PCM_FORMAT_S32_LE);
+  ret = snd_pcm_hw_params_set_format(pcm, params, SND_PCM_FORMAT_S16_LE);
   if (ret < 0) {
     printf("snd_pcm_hw_params_set_format: %s\n", snd_strerror(ret));
     return EXIT_FAILURE;
@@ -105,8 +112,8 @@ int setup_pcm_device(snd_pcm_t *pcm) {
     return EXIT_FAILURE;
   }
 
-  ret = snd_pcm_sw_params_set_start_threshold(pcm, sw_params, 0);
-  // ret = snd_pcm_sw_params_set_start_threshold(pcm, sw_params, period_size_frames);
+  // ret = snd_pcm_sw_params_set_start_threshold(pcm, sw_params, 0);
+  ret = snd_pcm_sw_params_set_start_threshold(pcm, sw_params, period_size_frames);
   if (ret < 0) {
     printf("snd_pcm_sw_params_set_start_threshold: %s\n", snd_strerror(ret));
     return EXIT_FAILURE;
@@ -272,7 +279,7 @@ int main(int argc, char *argv[]) {
     ++sample_index;
     if (avail_playback < 0) {
       printf("avail_playback: %s\n", snd_strerror(avail_playback));
-      return EXIT_FAILURE;
+      break;
     }
 
     if (avail_playback >= period_size_frames) {
@@ -280,13 +287,13 @@ int main(int argc, char *argv[]) {
 
       if (ret < 0) {
         printf("snd_pcm_writei: %s\n", snd_strerror(ret));
-        return EXIT_FAILURE;
+				break;
       }
     }
  
     if (avail_capture < 0) {
       printf("avail_capture: %s\n", snd_strerror(avail_capture));
-      return EXIT_FAILURE;
+			break;
     }
 
     if (avail_capture >= period_size_frames) {
@@ -294,7 +301,7 @@ int main(int argc, char *argv[]) {
 
       if (ret < 0) {
         printf("snd_pcm_readi: %s\n", snd_strerror(ret));
-        return EXIT_FAILURE;
+				break;
       }
     }
 
@@ -304,12 +311,12 @@ int main(int argc, char *argv[]) {
     ret = poll(pfds, filled_playback_pfds+filled_capture_pfds, 1000);
     if (ret < 0) {
       printf("poll: %s\n", strerror(ret));
-      return(EXIT_FAILURE);
+			break;
     }
 
     if (ret == 0) {
       printf("poll timeout\n");
-      return EXIT_FAILURE;
+			break;
     }
   } 
 
