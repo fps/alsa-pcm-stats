@@ -21,6 +21,7 @@ std::string pcm_device_name;
 int priority;
 int buffer_size;
 int sample_size;
+int availability_threshold;
 
 typedef int32_t sample_t;
 // typedef short sample_t;
@@ -141,6 +142,7 @@ int main(int argc, char *argv[]) {
     ("num-channels,c", po::value<int>(&num_channels)->default_value(1), "number of channels")
     ("pcm-device-name,d", po::value<std::string>(&pcm_device_name)->default_value("default"), "the ALSA pcm device name string")
     ("priority,P", po::value<int>(&priority)->default_value(70), "SCHED_FIFO priority")
+    ("availability-threshold,a", po::value<int>(&availability_threshold)->default_value(0), "the numner of frames available for capture or playback used to determine when to read or write to pcm stream")
     ("sample-size,s", po::value<int>(&sample_size)->default_value(1000), "the number of samples to collect for stats (might be less due how to alsa works)")
   ;
 
@@ -282,7 +284,7 @@ int main(int argc, char *argv[]) {
       break;
     }
 
-    if (avail_playback > 0) {
+    if (avail_playback > availability_threshold) {
       // ret = snd_pcm_writei(playback_pcm, buffer, period_size_frames);
       ret = snd_pcm_writei(playback_pcm, buffer, avail_playback);
 
@@ -298,7 +300,7 @@ int main(int argc, char *argv[]) {
     }
 
     // if (avail_capture >= period_size_frames) {
-    if (avail_capture > 0) {
+    if (avail_capture > availability_threshold) {
       // ret = snd_pcm_readi(capture_pcm, buffer, period_size_frames);
       ret = snd_pcm_readi(capture_pcm, buffer, avail_capture);
 
