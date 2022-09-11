@@ -15,7 +15,6 @@
 
 int period_size_frames;
 int num_periods;
-int num_channels;
 int sampling_rate_hz;
 std::string pcm_device_name;
 int priority;
@@ -37,9 +36,9 @@ struct data {
   data() :
 	playback_available(-1),
 	capture_available(-1),
+    wakeup_time{0},
     poll_pollin(0),
-    poll_pollout(0),
-    wakeup_time{0} {
+    poll_pollout(0) {
 
   }
 };
@@ -144,7 +143,6 @@ int main(int argc, char *argv[]) {
     ("period-size,p", po::value<int>(&period_size_frames)->default_value(1024), "period size (audio frames)")
     ("num-periods,n", po::value<int>(&num_periods)->default_value(2), "number of periods")
     ("rate,r", po::value<int>(&sampling_rate_hz)->default_value(48000), "sampling rate (hz)")
-    ("num-channels,c", po::value<int>(&num_channels)->default_value(1), "number of channels")
     ("pcm-device-name,d", po::value<std::string>(&pcm_device_name)->default_value("default"), "the ALSA pcm device name string")
     ("priority,P", po::value<int>(&priority)->default_value(70), "SCHED_FIFO priority")
     ("availability-threshold,a", po::value<int>(&availability_threshold)->default_value(0), "the numner of frames available for capture or playback used to determine when to read or write to pcm stream")
@@ -160,7 +158,7 @@ int main(int argc, char *argv[]) {
     return EXIT_SUCCESS;
   }
 
-  buffer_size = num_periods * period_size_frames;
+  buffer_size = 2 * num_periods * period_size_frames;
 
   buffer = new sample_t[buffer_size];
 
