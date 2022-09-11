@@ -275,6 +275,39 @@ int main(int argc, char *argv[]) {
   fprintf(stderr, "starting to sample...\n");
 
   while(true) {
+    ret = poll(pfds, filled_playback_pfds+filled_capture_pfds, 1000);
+    if (ret < 0) {
+      fprintf(stderr, "poll: %s\n", strerror(ret));
+			break;
+    }
+
+    if (ret == 0) {
+      printf("poll timeout\n");
+			break;
+    }
+
+    unsigned short revents;
+
+    ret = snd_pcm_poll_descriptors_revents(playback_pcm, pfds, filled_playback_pfds, &revents);
+    if (ret < 0) {
+      fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
+			break;
+    }
+ 
+    if (revents & POLLOUT) {
+        data_samples[sample_index].poll_pollout = 1;
+    }
+
+    ret = snd_pcm_poll_descriptors_revents(capture_pcm, pfds+filled_playback_pfds, filled_capture_pfds, &revents);
+    if (ret < 0) {
+      fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
+			break;
+    }
+
+    if (revents & POLLIN) {
+        data_samples[sample_index].poll_pollin = 1;
+    }
+
     snd_pcm_sframes_t avail_playback = snd_pcm_avail_update(playback_pcm);
     snd_pcm_sframes_t avail_capture = snd_pcm_avail_update(capture_pcm);
 
@@ -311,39 +344,6 @@ int main(int argc, char *argv[]) {
         printf("snd_pcm_readi: %s\n", snd_strerror(ret));
 				break;
       }
-    }
-
-    ret = poll(pfds, filled_playback_pfds+filled_capture_pfds, 1000);
-    if (ret < 0) {
-      fprintf(stderr, "poll: %s\n", strerror(ret));
-			break;
-    }
-
-    if (ret == 0) {
-      printf("poll timeout\n");
-			break;
-    }
-
-    unsigned short revents;
-
-    ret = snd_pcm_poll_descriptors_revents(playback_pcm, pfds, filled_playback_pfds, &revents);
-    if (ret < 0) {
-      fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
-			break;
-    }
- 
-    if (revents & POLLOUT) {
-        data_samples[sample_index].poll_pollout = 1;
-    }
-
-    ret = snd_pcm_poll_descriptors_revents(capture_pcm, pfds+filled_playback_pfds, filled_capture_pfds, &revents);
-    if (ret < 0) {
-      fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
-			break;
-    }
-
-    if (revents & POLLIN) {
-        data_samples[sample_index].poll_pollin = 1;
     }
 
     ++sample_index;
