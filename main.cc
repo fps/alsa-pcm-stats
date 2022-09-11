@@ -31,10 +31,14 @@ struct data {
   int playback_available;
   int capture_available;
   struct timespec wakeup_time;
+  int poll_pollin;
+  int poll_pollout;
 
   data() :
 	playback_available(-1),
-	capture_available(-1) {
+	capture_available(-1),
+    poll_pollin(0),
+    poll_pollout(0) {
 
   }
 };
@@ -269,6 +273,9 @@ int main(int argc, char *argv[]) {
 
   int sample_index = 0;
 
+  bool poll_pollin = false;
+  bool poll_pollout = false;
+
   fprintf(stderr, "starting to sample...\n");
   while(true) {
     snd_pcm_sframes_t avail_playback = snd_pcm_avail_update(playback_pcm);
@@ -278,7 +285,6 @@ int main(int argc, char *argv[]) {
     data_samples[sample_index].playback_available = avail_playback;
     data_samples[sample_index].capture_available = avail_capture;
 
-    ++sample_index;
     if (avail_playback < 0) {
       printf("avail_playback: %s\n", snd_strerror(avail_playback));
       break;
@@ -310,12 +316,9 @@ int main(int argc, char *argv[]) {
       }
     }
 
-    if (sample_index >= sample_size) {
-      break;
-    }
     ret = poll(pfds, filled_playback_pfds+filled_capture_pfds, 1000);
     if (ret < 0) {
-      printf("poll: %s\n", strerror(ret));
+      fprintf(stderr, "poll: %s\n", strerror(ret));
 			break;
     }
 
@@ -323,14 +326,41 @@ int main(int argc, char *argv[]) {
       printf("poll timeout\n");
 			break;
     }
+
+    unsigned short revents;
+
+    ret = snd_pcm_poll_descriptors_revents(playback_pcm, pfds, filled_playback_pfds, &revents);
+    if (ret < 0) {
+      fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
+			break;
+    }
+ 
+    if (revents & POLLOUT) {
+        data_samples[sample_index].poll_pollout = 1;
+    }
+
+    ret = snd_pcm_poll_descriptors_revents(capture_pcm, pfds+filled_playback_pfds, filled_capture_pfds, &revents);
+    if (ret < 0) {
+      fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
+			break;
+    }
+
+    if (revents & POLLIN) {
+        data_samples[sample_index].poll_pollin = 1;
+    }
+
+    ++sample_index;
+    if (sample_index >= sample_size) {
+      break;
+    }
   } 
 
   fprintf(stderr, "done sampling...\n"); 
 
-  printf("   tv.sec   tv.nsec available-playback available-capture\n");
+  printf("   tv.sec   tv.nsec available-playback available-capture POLLOUT POLLIN\n");
   for (int sample_index = 0; sample_index < sample_size; ++sample_index) {
     data data_sample = data_samples[sample_index];
-    printf("%09ld %09ld %018d %017d\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available);
+    printf("%09ld %09ld %018d %017d %07d %06d\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available, data_sample.poll_pollout, data_sample.poll_pollin);
   }
   delete buffer;
 
