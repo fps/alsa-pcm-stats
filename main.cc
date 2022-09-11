@@ -38,7 +38,8 @@ struct data {
 	playback_available(-1),
 	capture_available(-1),
     poll_pollin(0),
-    poll_pollout(0) {
+    poll_pollout(0),
+    wakeup_time{0} {
 
   }
 };
@@ -241,7 +242,7 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  struct pollfd playback_pfds[playback_pfds_count];
+  pollfd *playback_pfds = new  pollfd[playback_pfds_count];
   int filled_playback_pfds = snd_pcm_poll_descriptors(playback_pcm, playback_pfds, playback_pfds_count);
 
 
@@ -252,12 +253,12 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  struct pollfd capture_pfds[capture_pfds_count];
+  pollfd *capture_pfds = new pollfd[capture_pfds_count];
   int filled_capture_pfds = snd_pcm_poll_descriptors(capture_pcm, capture_pfds, capture_pfds_count);
 
 
 
-  struct pollfd pfds[filled_capture_pfds + filled_playback_pfds];
+  pollfd *pfds = new pollfd[filled_capture_pfds + filled_playback_pfds];
 
   for (int index = 0; index < filled_playback_pfds; ++index) {
     pfds[index] = playback_pfds[index];
@@ -273,10 +274,8 @@ int main(int argc, char *argv[]) {
 
   int sample_index = 0;
 
-  bool poll_pollin = false;
-  bool poll_pollout = false;
-
   fprintf(stderr, "starting to sample...\n");
+
   while(true) {
     snd_pcm_sframes_t avail_playback = snd_pcm_avail_update(playback_pcm);
     snd_pcm_sframes_t avail_capture = snd_pcm_avail_update(capture_pcm);
@@ -362,7 +361,8 @@ int main(int argc, char *argv[]) {
     data data_sample = data_samples[sample_index];
     printf("%09ld %09ld %018d %017d %07d %06d\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available, data_sample.poll_pollout, data_sample.poll_pollin);
   }
-  delete buffer;
+
+  // delete[] buffer;
 
   return EXIT_SUCCESS;
 }
