@@ -1,4 +1,4 @@
-CXXFLAGS ?= -g -O0 -Wall -pthread -lboost_program_options -lasound
+CXXFLAGS ?= -march=native -O3 -Wall -pthread -lboost_program_options -lasound
 
 .phony: all
 

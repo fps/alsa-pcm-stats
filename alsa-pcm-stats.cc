@@ -21,6 +21,7 @@ int priority;
 int buffer_size;
 int sample_size;
 int availability_threshold;
+int poll_in_out;
 
 typedef int32_t sample_t;
 // typedef short sample_t;
@@ -145,8 +146,9 @@ int main(int argc, char *argv[]) {
     ("rate,r", po::value<int>(&sampling_rate_hz)->default_value(48000), "sampling rate (hz)")
     ("pcm-device-name,d", po::value<std::string>(&pcm_device_name)->default_value("default"), "the ALSA pcm device name string")
     ("priority,P", po::value<int>(&priority)->default_value(70), "SCHED_FIFO priority")
-    ("availability-threshold,a", po::value<int>(&availability_threshold)->default_value(0), "the numner of frames available for capture or playback used to determine when to read or write to pcm stream")
+    ("availability-threshold,a", po::value<int>(&availability_threshold)->default_value(1), "the numner of frames available for capture or playback used to determine when to read or write to pcm stream")
     ("sample-size,s", po::value<int>(&sample_size)->default_value(1000), "the number of samples to collect for stats (might be less due how to alsa works)")
+    ("wait-for-poll-in-out,w", po::value<int>(&poll_in_out)->default_value(0), "whether to wait for POLLIN/POLLOUT")
   ;
 
   po::variables_map vm;
@@ -286,6 +288,9 @@ int main(int argc, char *argv[]) {
 			break;
     }
 
+    bool should_write = false;
+    bool should_read = false;
+
     unsigned short revents;
 
     ret = snd_pcm_poll_descriptors_revents(playback_pcm, pfds, filled_playback_pfds, &revents);
@@ -296,6 +301,9 @@ int main(int argc, char *argv[]) {
  
     if (revents & POLLOUT) {
         data_samples[sample_index].poll_pollout = 1;
+        if (poll_in_out) {
+            should_write = true;
+        }
     }
 
     ret = snd_pcm_poll_descriptors_revents(capture_pcm, pfds+filled_playback_pfds, filled_capture_pfds, &revents);
@@ -306,6 +314,9 @@ int main(int argc, char *argv[]) {
 
     if (revents & POLLIN) {
         data_samples[sample_index].poll_pollin = 1;
+        if (poll_in_out) {
+            should_read = true;
+        }
     }
 
     snd_pcm_sframes_t avail_playback = snd_pcm_avail_update(playback_pcm);
@@ -320,7 +331,7 @@ int main(int argc, char *argv[]) {
       break;
     }
 
-    if (avail_playback > availability_threshold) {
+    if (avail_playback >= availability_threshold) {
       // ret = snd_pcm_writei(playback_pcm, buffer, period_size_frames);
       ret = snd_pcm_writei(playback_pcm, buffer, avail_playback);
 
@@ -335,8 +346,7 @@ int main(int argc, char *argv[]) {
 			break;
     }
 
-    // if (avail_capture >= period_size_frames) {
-    if (avail_capture > availability_threshold) {
+    if (avail_capture >= availability_threshold) {
       // ret = snd_pcm_readi(capture_pcm, buffer, period_size_frames);
       ret = snd_pcm_readi(capture_pcm, buffer, avail_capture);
 
