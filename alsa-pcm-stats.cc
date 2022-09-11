@@ -28,19 +28,19 @@ typedef int32_t sample_t;
 sample_t *buffer;
 
 struct data {
-int playback_available;
-int capture_available;
-struct timespec wakeup_time;
-int poll_pollin;
-int poll_pollout;
-
-data() :
-    playback_available(-1),
-    capture_available(-1),
-    wakeup_time{0},
-    poll_pollin(0),
-    poll_pollout(0) {
-
+    int playback_available;
+    int capture_available;
+    struct timespec wakeup_time;
+    int poll_pollin;
+    int poll_pollout;
+    
+    data() :
+        playback_available(-1),
+        capture_available(-1),
+        wakeup_time{0},
+        poll_pollin(0),
+        poll_pollout(0) {
+    
     }
 };
 
