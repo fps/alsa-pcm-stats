@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <pthread.h>
 #include <time.h>
+#include <sys/mman.h>
 
 #include <string>
 #include <boost/program_options.hpp>
@@ -21,6 +22,7 @@ int priority;
 int buffer_size;
 int sample_size;
 int availability_threshold;
+int frame_read_write_limit;
 int poll_in_out;
 
 typedef int32_t sample_t;
@@ -33,13 +35,17 @@ struct data {
     struct timespec wakeup_time;
     int poll_pollin;
     int poll_pollout;
+    int playback_written;
+    int capture_read;
     
     data() :
         playback_available(-1),
         capture_available(-1),
         wakeup_time{0},
         poll_pollin(0),
-        poll_pollout(0) {
+        poll_pollout(0),
+        playback_written(0),
+        capture_read(0) {
     
     }
 };
@@ -83,7 +89,7 @@ int setup_pcm_device(snd_pcm_t *pcm) {
         buffer[index] = 0;
     }
 
-    ret = snd_pcm_hw_params_set_buffer_size(pcm, params, buffer_size);
+    ret = snd_pcm_hw_params_set_buffer_size(pcm, params, period_size_frames * num_periods);
     if (ret < 0) {
         printf("snd_pcm_hw_params_set_buffer_size: %s\n", snd_strerror(ret));
         return EXIT_FAILURE;
@@ -142,11 +148,12 @@ int main(int argc, char *argv[]) {
     options_desc.add_options()
         ("help,h", "produce this help message")
         ("period-size,p", po::value<int>(&period_size_frames)->default_value(1024), "period size (audio frames)")
-        ("num-periods,n", po::value<int>(&num_periods)->default_value(2), "number of periods")
+        ("number-of-periods,n", po::value<int>(&num_periods)->default_value(2), "number of periods")
         ("rate,r", po::value<int>(&sampling_rate_hz)->default_value(48000), "sampling rate (hz)")
         ("pcm-device-name,d", po::value<std::string>(&pcm_device_name)->default_value("default"), "the ALSA pcm device name string")
         ("priority,P", po::value<int>(&priority)->default_value(70), "SCHED_FIFO priority")
-        ("availability-threshold,a", po::value<int>(&availability_threshold)->default_value(1), "the numner of frames available for capture or playback used to determine when to read or write to pcm stream")
+        ("availability-threshold,a", po::value<int>(&availability_threshold)->default_value(-1), "the number of frames available for capture or playback used to determine when to read or write to pcm stream (-1 means a period size)")
+        ("frame-read-write-limit,l", po::value<int>(&frame_read_write_limit)->default_value(-1), "limit for the number of frames written/read during a single read/write (-1 means a period-size * number-of-periods)")
         ("sample-size,s", po::value<int>(&sample_size)->default_value(1000), "the number of samples to collect for stats (might be less due how to alsa works)")
         ("wait-for-poll-in-out,w", po::value<int>(&poll_in_out)->default_value(0), "whether to wait for POLLIN/POLLOUT")
     ;
@@ -160,11 +167,26 @@ int main(int argc, char *argv[]) {
         return EXIT_SUCCESS;
     }
 
+    if (frame_read_write_limit == -1) {
+        frame_read_write_limit = period_size_frames * num_periods;
+    }
+
+    if (availability_threshold == -1) {
+        availability_threshold = period_size_frames;
+    }
+
     buffer_size = 2 * num_periods * period_size_frames;
 
     buffer = new sample_t[buffer_size];
 
     int ret;
+
+    fprintf(stderr, "locking memory...\n");
+    ret = mlockall(MCL_FUTURE);
+    if (ret != 0) {
+        printf("mlockall: %s\n", strerror(ret));
+        return EXIT_FAILURE;
+    }
 
     fprintf(stderr, "setting SCHED_FIFO at priority: %d\n", priority);
 
@@ -205,35 +227,12 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
+    // #################### alsa pcm device linking
     ret = snd_pcm_link(playback_pcm, capture_pcm);
     if (ret < 0) {
         printf("snd_pcm_link: %s\n", snd_strerror(ret));
         return EXIT_FAILURE;
     }
-
-
-    /*
-    fprintf(stderr, "waiting for pcm devices...\n");
-
-    ret = snd_pcm_wait(playback_pcm, 1000);
-    if (ret < 0) {
-        printf("snd_pcm_wait: %s\n", snd_strerror(ret));
-        return EXIT_FAILURE;
-    }
-
-    ret = snd_pcm_wait(capture_pcm, 1000);
-    if (ret < 0) {
-        printf("snd_pcm_wait: %s\n", snd_strerror(ret));
-        return EXIT_FAILURE;
-    }
-    */
-
-    // the device starts automatically once the start threshold is reached
-    // ret = snd_pcm_start(pcm);
-    // if (ret < 0) {
-    //   printf("start: %s\n", snd_strerror(ret));
-    //   return EXIT_FAILURE;
-    // }
 
     // #################### alsa pcm device poll descriptors
     int playback_pfds_count = snd_pcm_poll_descriptors_count(playback_pcm);
@@ -279,13 +278,13 @@ int main(int argc, char *argv[]) {
     while(true) {
         ret = poll(pfds, filled_playback_pfds+filled_capture_pfds, 1000);
         if (ret < 0) {
-        fprintf(stderr, "poll: %s\n", strerror(ret));
-                break;
+            fprintf(stderr, "poll: %s\n", strerror(ret));
+            break;
         }
 
         if (ret == 0) {
-        printf("poll timeout\n");
-                break;
+            printf("poll timeout\n");
+            break;
         }
 
         bool should_write = false;
@@ -295,8 +294,8 @@ int main(int argc, char *argv[]) {
 
         ret = snd_pcm_poll_descriptors_revents(playback_pcm, pfds, filled_playback_pfds, &revents);
         if (ret < 0) {
-        fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
-                break;
+            fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
+            break;
         }
 
         if (revents & POLLOUT) {
@@ -308,8 +307,8 @@ int main(int argc, char *argv[]) {
 
         ret = snd_pcm_poll_descriptors_revents(capture_pcm, pfds+filled_playback_pfds, filled_capture_pfds, &revents);
         if (ret < 0) {
-        fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
-                break;
+            fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
+            break;
         }
 
         if (revents & POLLIN) {
@@ -319,55 +318,55 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        snd_pcm_sframes_t avail_playback = snd_pcm_avail_update(playback_pcm);
-        snd_pcm_sframes_t avail_capture = snd_pcm_avail_update(capture_pcm);
+        int avail_playback = snd_pcm_avail_update(playback_pcm);
+        int avail_capture = snd_pcm_avail_update(capture_pcm);
 
         clock_gettime(CLOCK_MONOTONIC, &data_samples[sample_index].wakeup_time);
         data_samples[sample_index].playback_available = avail_playback;
         data_samples[sample_index].capture_available = avail_capture;
 
         if (avail_playback < 0) {
-        printf("avail_playback: %s\n", snd_strerror(avail_playback));
-        break;
+            printf("avail_playback: %s\n", snd_strerror(avail_playback));
+            break;
         }
 
         if (avail_playback >= availability_threshold) {
-        // ret = snd_pcm_writei(playback_pcm, buffer, period_size_frames);
-        ret = snd_pcm_writei(playback_pcm, buffer, avail_playback);
-
-        if (ret < 0) {
-            printf("snd_pcm_writei: %s\n", snd_strerror(ret));
-                    break;
-        }
+            ret = snd_pcm_writei(playback_pcm, buffer, std::max(std::min(avail_playback, frame_read_write_limit), availability_threshold));
+            data_samples[sample_index].playback_written = ret;
+    
+            if (ret < 0) {
+                printf("snd_pcm_writei: %s\n", snd_strerror(ret));
+                break;
+            }
         }
 
         if (avail_capture < 0) {
-        printf("avail_capture: %s\n", snd_strerror(avail_capture));
-                break;
+            printf("avail_capture: %s\n", snd_strerror(avail_capture));
+            break;
         }
-
+    
         if (avail_capture >= availability_threshold) {
-        // ret = snd_pcm_readi(capture_pcm, buffer, period_size_frames);
-        ret = snd_pcm_readi(capture_pcm, buffer, avail_capture);
-
-        if (ret < 0) {
-            printf("snd_pcm_readi: %s\n", snd_strerror(ret));
-                    break;
-        }
+            ret = snd_pcm_readi(capture_pcm, buffer, std::max(std::min(avail_capture, frame_read_write_limit), availability_threshold));
+            data_samples[sample_index].capture_read = ret;
+    
+            if (ret < 0) {
+                printf("snd_pcm_readi: %s\n", snd_strerror(ret));
+                break;
+            }
         }
 
         ++sample_index;
         if (sample_index >= sample_size) {
-        break;
+            break;
         }
     }
 
     fprintf(stderr, "done sampling...\n");
 
-    printf("   tv.sec   tv.nsec available-playback available-capture POLLOUT POLLIN\n");
+    printf("   tv.sec   tv.nsec available-playback available-capture POLLOUT POLLIN written    read\n");
     for (int sample_index = 0; sample_index < sample_size; ++sample_index) {
         data data_sample = data_samples[sample_index];
-        printf("%09ld %09ld %018d %017d %07d %06d\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available, data_sample.poll_pollout, data_sample.poll_pollin);
+        printf("%09ld %09ld %018d %017d %07d %06d %07d %07d\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available, data_sample.poll_pollout, data_sample.poll_pollin, data_sample.playback_written, data_sample.capture_read);
     }
 
     // delete[] buffer;
