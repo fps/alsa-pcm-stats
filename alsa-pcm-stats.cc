@@ -51,95 +51,7 @@ struct data {
 };
 
 
-int setup_pcm_device(snd_pcm_t *pcm) {
-    fprintf(stderr, "setting up pcm device...\n");
-    int ret = 0;
-
-    // #################### alsa pcm device hardware parameters
-    snd_pcm_hw_params_t *params;
-    snd_pcm_hw_params_alloca(&params);
-    ret = snd_pcm_hw_params_any(pcm, params);
-
-    ret = snd_pcm_hw_params_set_channels(pcm, params, 2);
-    if (ret < 0) {
-        printf("snd_pcm_hw_params_set_channels: %s\n", snd_strerror(ret));
-        return EXIT_FAILURE;
-    }
-
-    ret = snd_pcm_hw_params_set_access(pcm, params, SND_PCM_ACCESS_RW_INTERLEAVED);
-    if (ret < 0) {
-        printf("snd_pcm_hw_params_set_access: %s\n", snd_strerror(ret));
-        return EXIT_FAILURE;
-    }
-
-    ret = snd_pcm_hw_params_set_format(pcm, params, SND_PCM_FORMAT_S32_LE);
-    if (ret < 0) {
-        printf("snd_pcm_hw_params_set_format: %s\n", snd_strerror(ret));
-        return EXIT_FAILURE;
-    }
-
-    ret = snd_pcm_hw_params_set_rate(pcm, params, sampling_rate_hz, 0);
-    if (ret < 0) {
-        printf("snd_pcm_hw_params_set_rate (%d): %s\n", sampling_rate_hz, snd_strerror(ret));
-        return EXIT_FAILURE;
-    }
-
-
-    for (int index = 0; index < buffer_size; ++index) {
-        buffer[index] = 0;
-    }
-
-    ret = snd_pcm_hw_params_set_buffer_size(pcm, params, period_size_frames * num_periods);
-    if (ret < 0) {
-        printf("snd_pcm_hw_params_set_buffer_size: %s\n", snd_strerror(ret));
-        return EXIT_FAILURE;
-    }
-
-    ret = snd_pcm_hw_params_set_period_size(pcm, params, period_size_frames, 0);
-    if (ret < 0) {
-        printf("snd_pcm_hw_params_set_period_size (%d): %s\n", period_size_frames, snd_strerror(ret));
-        return EXIT_FAILURE;
-    }
-
-    ret = snd_pcm_hw_params(pcm, params);
-    if (ret < 0) {
-        printf("snd_pcm_hw_params: %s\n", snd_strerror(ret));
-        return EXIT_FAILURE;
-    }
-
-    // #################### alsa pcm device software params
-    snd_pcm_sw_params_t *sw_params;
-    snd_pcm_sw_params_alloca(&sw_params);
-
-    ret = snd_pcm_sw_params_current(pcm, sw_params);
-    if (ret < 0) {
-        printf("snd_pcm_sw_params_current: %s\n", snd_strerror(ret));
-        return EXIT_FAILURE;
-    }
-
-
-    ret = snd_pcm_sw_params_set_avail_min(pcm, sw_params, period_size_frames);
-    if (ret < 0) {
-        printf("snd_pcm_sw_params_set_avail_min: %s\n", snd_strerror(ret));
-        return EXIT_FAILURE;
-    }
-
-    // ret = snd_pcm_sw_params_set_start_threshold(pcm, sw_params, 0);
-    ret = snd_pcm_sw_params_set_start_threshold(pcm, sw_params, period_size_frames);
-    if (ret < 0) {
-        printf("snd_pcm_sw_params_set_start_threshold: %s\n", snd_strerror(ret));
-        return EXIT_FAILURE;
-    }
-
-    snd_pcm_sw_params(pcm, sw_params);
-    if (ret < 0) {
-        printf("snd_pcm_sw_params: %s\n", snd_strerror(ret));
-        return EXIT_FAILURE;
-    }
-
-    fprintf(stderr, "done.\n");
-    return EXIT_SUCCESS;
-}
+int setup_pcm_device(snd_pcm_t *pcm);
 
 int main(int argc, char *argv[]) {
     namespace po = boost::program_options;
@@ -373,3 +285,94 @@ int main(int argc, char *argv[]) {
 
     return EXIT_SUCCESS;
 }
+
+int setup_pcm_device(snd_pcm_t *pcm) {
+    fprintf(stderr, "setting up pcm device...\n");
+    int ret = 0;
+
+    // #################### alsa pcm device hardware parameters
+    snd_pcm_hw_params_t *params;
+    snd_pcm_hw_params_alloca(&params);
+    ret = snd_pcm_hw_params_any(pcm, params);
+
+    ret = snd_pcm_hw_params_set_channels(pcm, params, 2);
+    if (ret < 0) {
+        printf("snd_pcm_hw_params_set_channels: %s\n", snd_strerror(ret));
+        return EXIT_FAILURE;
+    }
+
+    ret = snd_pcm_hw_params_set_access(pcm, params, SND_PCM_ACCESS_RW_INTERLEAVED);
+    if (ret < 0) {
+        printf("snd_pcm_hw_params_set_access: %s\n", snd_strerror(ret));
+        return EXIT_FAILURE;
+    }
+
+    ret = snd_pcm_hw_params_set_format(pcm, params, SND_PCM_FORMAT_S32_LE);
+    if (ret < 0) {
+        printf("snd_pcm_hw_params_set_format: %s\n", snd_strerror(ret));
+        return EXIT_FAILURE;
+    }
+
+    ret = snd_pcm_hw_params_set_rate(pcm, params, sampling_rate_hz, 0);
+    if (ret < 0) {
+        printf("snd_pcm_hw_params_set_rate (%d): %s\n", sampling_rate_hz, snd_strerror(ret));
+        return EXIT_FAILURE;
+    }
+
+
+    for (int index = 0; index < buffer_size; ++index) {
+        buffer[index] = 0;
+    }
+
+    ret = snd_pcm_hw_params_set_buffer_size(pcm, params, period_size_frames * num_periods);
+    if (ret < 0) {
+        printf("snd_pcm_hw_params_set_buffer_size: %s\n", snd_strerror(ret));
+        return EXIT_FAILURE;
+    }
+
+    ret = snd_pcm_hw_params_set_period_size(pcm, params, period_size_frames, 0);
+    if (ret < 0) {
+        printf("snd_pcm_hw_params_set_period_size (%d): %s\n", period_size_frames, snd_strerror(ret));
+        return EXIT_FAILURE;
+    }
+
+    ret = snd_pcm_hw_params(pcm, params);
+    if (ret < 0) {
+        printf("snd_pcm_hw_params: %s\n", snd_strerror(ret));
+        return EXIT_FAILURE;
+    }
+
+    // #################### alsa pcm device software params
+    snd_pcm_sw_params_t *sw_params;
+    snd_pcm_sw_params_alloca(&sw_params);
+
+    ret = snd_pcm_sw_params_current(pcm, sw_params);
+    if (ret < 0) {
+        printf("snd_pcm_sw_params_current: %s\n", snd_strerror(ret));
+        return EXIT_FAILURE;
+    }
+
+
+    ret = snd_pcm_sw_params_set_avail_min(pcm, sw_params, period_size_frames);
+    if (ret < 0) {
+        printf("snd_pcm_sw_params_set_avail_min: %s\n", snd_strerror(ret));
+        return EXIT_FAILURE;
+    }
+
+    // ret = snd_pcm_sw_params_set_start_threshold(pcm, sw_params, 0);
+    ret = snd_pcm_sw_params_set_start_threshold(pcm, sw_params, period_size_frames);
+    if (ret < 0) {
+        printf("snd_pcm_sw_params_set_start_threshold: %s\n", snd_strerror(ret));
+        return EXIT_FAILURE;
+    }
+
+    snd_pcm_sw_params(pcm, sw_params);
+    if (ret < 0) {
+        printf("snd_pcm_sw_params: %s\n", snd_strerror(ret));
+        return EXIT_FAILURE;
+    }
+
+    fprintf(stderr, "done.\n");
+    return EXIT_SUCCESS;
+}
+
