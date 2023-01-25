@@ -24,6 +24,8 @@ int sample_size;
 int availability_threshold;
 int frame_read_write_limit;
 int poll_in_out;
+int verbose;
+int show_header;
 
 typedef int32_t sample_t;
 // typedef short sample_t;
@@ -39,8 +41,8 @@ struct data {
     int capture_read;
     
     data() :
-        playback_available(-1),
-        capture_available(-1),
+        playback_available(0),
+        capture_available(0),
         wakeup_time{0},
         poll_pollin(0),
         poll_pollout(0),
@@ -68,6 +70,8 @@ int main(int argc, char *argv[]) {
         ("frame-read-write-limit,l", po::value<int>(&frame_read_write_limit)->default_value(-1), "limit for the number of frames written/read during a single read/write (-1 means a period-size * number-of-periods)")
         ("sample-size,s", po::value<int>(&sample_size)->default_value(1000), "the number of samples to collect for stats (might be less due how to alsa works)")
         ("wait-for-poll-in-out,w", po::value<int>(&poll_in_out)->default_value(0), "whether to wait for POLLIN/POLLOUT")
+        ("verbose,v", po::value<int>(&verbose)->default_value(0), "whether to be a little more verbose")
+        ("show-header,o", po::value<int>(&show_header)->default_value(0), "whether to show a header in the output table")
     ;
 
     po::variables_map vm;
@@ -93,63 +97,63 @@ int main(int argc, char *argv[]) {
 
     int ret;
 
-    fprintf(stderr, "locking memory...\n");
+    if (verbose) { fprintf(stderr, "locking memory...\n"); }
     ret = mlockall(MCL_FUTURE);
     if (ret != 0) {
         printf("mlockall: %s\n", strerror(ret));
         return EXIT_FAILURE;
     }
 
-    fprintf(stderr, "setting SCHED_FIFO at priority: %d\n", priority);
+    if (verbose) { fprintf(stderr, "setting SCHED_FIFO at priority: %d\n", priority); }
 
     // #################### scheduling and priority setup
     struct sched_param pthread_params;
     pthread_params.sched_priority = priority;
     ret = pthread_setschedparam(pthread_self(), SCHED_FIFO, &pthread_params);
     if (ret != 0) {
-        printf("setschedparam: %s\n", strerror(ret));
+        fprintf(stderr, "setschedparam: %s\n", strerror(ret));
         return EXIT_FAILURE;
     }
 
-    fprintf(stderr, "opening alsa pcm devices...\n");
+    if (verbose) { fprintf(stderr, "opening alsa pcm devices...\n"); }
 
     // #################### alsa pcm device open
     snd_pcm_t *playback_pcm;
     ret = snd_pcm_open(&playback_pcm, pcm_device_name.c_str(), SND_PCM_STREAM_PLAYBACK, SND_PCM_NONBLOCK);
     if (ret < 0) {
-        printf("snd_pcm_open: %s\n", snd_strerror(ret));
+        fprintf(stderr, "snd_pcm_open: %s\n", snd_strerror(ret));
         return EXIT_FAILURE;
     }
 
     snd_pcm_t *capture_pcm;
     ret = snd_pcm_open(&capture_pcm, pcm_device_name.c_str(), SND_PCM_STREAM_CAPTURE, SND_PCM_NONBLOCK);
     if (ret < 0) {
-        printf("snd_pcm_open: %s\n", snd_strerror(ret));
+        fprintf(stderr, "snd_pcm_open: %s\n", snd_strerror(ret));
         return EXIT_FAILURE;
     }
 
     ret = setup_pcm_device(playback_pcm);
     if (ret != 0) {
-        printf("setup_pcm_device: %s\n", "Failed to setup playback device");
+        fprintf(stderr, "setup_pcm_device: %s\n", "Failed to setup playback device");
         return EXIT_FAILURE;
     }
     ret = setup_pcm_device(capture_pcm);
     if (ret != 0) {
-        printf("setup_pcm_device: %s\n", "Failed to setup capture device");
+        fprintf(stderr, "setup_pcm_device: %s\n", "Failed to setup capture device");
         return EXIT_FAILURE;
     }
 
     // #################### alsa pcm device linking
     ret = snd_pcm_link(playback_pcm, capture_pcm);
     if (ret < 0) {
-        printf("snd_pcm_link: %s\n", snd_strerror(ret));
+        fprintf(stderr, "snd_pcm_link: %s\n", snd_strerror(ret));
         return EXIT_FAILURE;
     }
 
     // #################### alsa pcm device poll descriptors
     int playback_pfds_count = snd_pcm_poll_descriptors_count(playback_pcm);
     if (playback_pfds_count < 1) {
-        printf("poll descriptors count less than one\n");
+        fprintf(stderr, "poll descriptors count less than one\n");
         return EXIT_FAILURE;
     }
 
@@ -160,7 +164,7 @@ int main(int argc, char *argv[]) {
 
     int capture_pfds_count = snd_pcm_poll_descriptors_count(capture_pcm);
     if (capture_pfds_count < 1) {
-        printf("poll descriptors count less than one\n");
+        fprintf(stderr, "poll descriptors count less than one\n");
         return EXIT_FAILURE;
     }
 
@@ -185,7 +189,7 @@ int main(int argc, char *argv[]) {
 
     int sample_index = 0;
 
-    fprintf(stderr, "starting to sample...\n");
+    if (verbose) { fprintf(stderr, "starting to sample...\n"); }
 
     while(true) {
         ret = poll(pfds, filled_playback_pfds+filled_capture_pfds, 1000);
@@ -238,7 +242,7 @@ int main(int argc, char *argv[]) {
         data_samples[sample_index].capture_available = avail_capture;
 
         if (avail_playback < 0) {
-            printf("avail_playback: %s\n", snd_strerror(avail_playback));
+            fprintf(stderr, "avail_playback: %s\n", snd_strerror(avail_playback));
             break;
         }
 
@@ -247,13 +251,13 @@ int main(int argc, char *argv[]) {
             data_samples[sample_index].playback_written = ret;
     
             if (ret < 0) {
-                printf("snd_pcm_writei: %s\n", snd_strerror(ret));
+                fprintf(stderr, "snd_pcm_writei: %s\n", snd_strerror(ret));
                 break;
             }
         }
 
         if (avail_capture < 0) {
-            printf("avail_capture: %s\n", snd_strerror(avail_capture));
+            fprintf(stderr, "avail_capture: %s\n", snd_strerror(avail_capture));
             break;
         }
     
@@ -262,7 +266,7 @@ int main(int argc, char *argv[]) {
             data_samples[sample_index].capture_read = ret;
     
             if (ret < 0) {
-                printf("snd_pcm_readi: %s\n", snd_strerror(ret));
+                fprintf(stderr, "snd_pcm_readi: %s\n", snd_strerror(ret));
                 break;
             }
         }
@@ -273,12 +277,17 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    fprintf(stderr, "done sampling...\n");
+    if (verbose) { fprintf(stderr, "done sampling...\n"); } 
 
-    printf("   tv.sec   tv.nsec available-playback available-capture POLLOUT POLLIN written    read\n");
+    if (show_header) {
+        printf("   tv.sec   tv.nsec available-playback available-capture POLLOUT POLLIN written    read\n");
+    }
     for (int sample_index = 0; sample_index < sample_size; ++sample_index) {
         data data_sample = data_samples[sample_index];
         printf("%09ld %09ld %018d %017d %07d %06d %07d %07d\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available, data_sample.poll_pollout, data_sample.poll_pollin, data_sample.playback_written, data_sample.capture_read);
+        if (data_sample.capture_available < 0 || data_sample.playback_available < 0) {
+            break;
+        }
     }
 
     // delete[] buffer;
@@ -287,7 +296,7 @@ int main(int argc, char *argv[]) {
 }
 
 int setup_pcm_device(snd_pcm_t *pcm) {
-    fprintf(stderr, "setting up pcm device...\n");
+    if (verbose) { fprintf(stderr, "setting up pcm device...\n"); }
     int ret = 0;
 
     // #################### alsa pcm device hardware parameters
@@ -372,7 +381,7 @@ int setup_pcm_device(snd_pcm_t *pcm) {
         return EXIT_FAILURE;
     }
 
-    fprintf(stderr, "done.\n");
+    if (verbose) { fprintf(stderr, "done.\n"); }
     return EXIT_SUCCESS;
 }
 
