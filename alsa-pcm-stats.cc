@@ -28,8 +28,8 @@ int poll_in_out;
 int verbose;
 int show_header;
 
-// typedef int32_t sample_t;
-typedef int16_t sample_t;
+typedef int32_t sample_t;
+// typedef int16_t sample_t;
 sample_t *buffer;
 
 struct data {
@@ -72,7 +72,7 @@ int main(int argc, char *argv[]) {
         ("frame-read-write-limit,l", po::value<int>(&frame_read_write_limit)->default_value(-1), "limit for the number of frames written/read during a single read/write (-1 means a period-size * number-of-periods)")
         ("sample-size,s", po::value<int>(&sample_size)->default_value(1000), "the number of samples to collect for stats (might be less due how to alsa works)")
         ("wait-for-poll-in-out,w", po::value<int>(&poll_in_out)->default_value(0), "whether to wait for POLLIN/POLLOUT")
-        ("sample-format,f", po::value<std::string>(&sample_format)->default_value("S16LE"), "the sample format. Available formats: S16LE, S32LE")
+        ("sample-format,f", po::value<std::string>(&sample_format)->default_value("S32LE"), "the sample format. Available formats: S16LE, S32LE")
         ("show-header,o", po::value<int>(&show_header)->default_value(1), "whether to show a header in the output table")
     ;
 
@@ -93,6 +93,7 @@ int main(int argc, char *argv[]) {
         availability_threshold = period_size_frames;
     }
 
+    // 2 because stereo
     buffer_size = 2 * num_periods * period_size_frames;
 
     buffer = new sample_t[buffer_size];
@@ -339,7 +340,6 @@ int setup_pcm_device(snd_pcm_t *pcm) {
         printf("snd_pcm_hw_params_set_rate (%d): %s\n", sampling_rate_hz, snd_strerror(ret));
         return EXIT_FAILURE;
     }
-
 
     for (int index = 0; index < buffer_size; ++index) {
         buffer[index] = 0;
