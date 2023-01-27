@@ -206,7 +206,7 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-        unsigned short revents;
+        unsigned short revents = 0;
 
         ret = snd_pcm_poll_descriptors_revents(playback_pcm, pfds, filled_playback_pfds, &revents);
         if (ret < 0) {
@@ -217,11 +217,14 @@ int main(int argc, char *argv[]) {
         bool should_write = true;
         bool should_read = true;
 
-         if (revents & POLLOUT) {
-            data_samples[sample_index].poll_pollout = 1;
-            if (poll_in_out) {
+        if (poll_in_out) {
+            if (revents & POLLOUT) {
+                data_samples[sample_index].poll_pollout = 1;
                 should_write = true;
+            } else {
+                should_write = false;
             }
+            
         }
 
         ret = snd_pcm_poll_descriptors_revents(capture_pcm, pfds+filled_playback_pfds, filled_capture_pfds, &revents);
@@ -230,10 +233,12 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-        if (revents & POLLIN) {
-            data_samples[sample_index].poll_pollin = 1;
-            if (poll_in_out) {
+        if (poll_in_out) {
+            if (revents & POLLIN) {
+                data_samples[sample_index].poll_pollin = 1;
                 should_read = true;
+            } else {
+                should_read = false;
             }
         }
 
@@ -249,7 +254,7 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-        if (avail_playback >= availability_threshold && should_read) {
+        if (avail_playback >= availability_threshold && should_write) {
             ret = snd_pcm_writei(playback_pcm, buffer, std::max(std::min(avail_playback, frame_read_write_limit), availability_threshold));
             data_samples[sample_index].playback_written = ret;
     
@@ -264,7 +269,7 @@ int main(int argc, char *argv[]) {
             break;
         }
     
-        if (avail_capture >= availability_threshold && should_write) {
+        if (avail_capture >= availability_threshold && should_read){
             ret = snd_pcm_readi(capture_pcm, buffer, std::max(std::min(avail_capture, frame_read_write_limit), availability_threshold));
             data_samples[sample_index].capture_read = ret;
     
