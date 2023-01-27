@@ -103,7 +103,7 @@ int main(int argc, char *argv[]) {
     if (verbose) { fprintf(stderr, "locking memory...\n"); }
     ret = mlockall(MCL_FUTURE);
     if (ret != 0) {
-        printf("mlockall: %s\n", strerror(ret));
+        fprintf(stderr, "mlockall: %s\n", strerror(ret));
         return EXIT_FAILURE;
     }
 
@@ -202,7 +202,7 @@ int main(int argc, char *argv[]) {
         }
 
         if (ret == 0) {
-            printf("poll timeout\n");
+            fprintf(stderr, "poll timeout\n");
             break;
         }
 
@@ -337,7 +337,7 @@ int setup_pcm_device(snd_pcm_t *pcm) {
 
     ret = snd_pcm_hw_params_set_rate(pcm, params, sampling_rate_hz, 0);
     if (ret < 0) {
-        printf("snd_pcm_hw_params_set_rate (%d): %s\n", sampling_rate_hz, snd_strerror(ret));
+        fprintf(stderr, "snd_pcm_hw_params_set_rate (%d): %s\n", sampling_rate_hz, snd_strerror(ret));
         return EXIT_FAILURE;
     }
 
@@ -347,19 +347,19 @@ int setup_pcm_device(snd_pcm_t *pcm) {
 
     ret = snd_pcm_hw_params_set_buffer_size(pcm, params, period_size_frames * num_periods);
     if (ret < 0) {
-        printf("snd_pcm_hw_params_set_buffer_size: %s\n", snd_strerror(ret));
+        fprintf(stderr, "snd_pcm_hw_params_set_buffer_size: %s\n", snd_strerror(ret));
         return EXIT_FAILURE;
     }
 
     ret = snd_pcm_hw_params_set_period_size(pcm, params, period_size_frames, 0);
     if (ret < 0) {
-        printf("snd_pcm_hw_params_set_period_size (%d): %s\n", period_size_frames, snd_strerror(ret));
+        fprintf(stderr, "snd_pcm_hw_params_set_period_size (%d): %s\n", period_size_frames, snd_strerror(ret));
         return EXIT_FAILURE;
     }
 
     ret = snd_pcm_hw_params(pcm, params);
     if (ret < 0) {
-        printf("snd_pcm_hw_params: %s\n", snd_strerror(ret));
+        fprintf(stderr, "snd_pcm_hw_params: %s\n", snd_strerror(ret));
         return EXIT_FAILURE;
     }
 
@@ -369,27 +369,27 @@ int setup_pcm_device(snd_pcm_t *pcm) {
 
     ret = snd_pcm_sw_params_current(pcm, sw_params);
     if (ret < 0) {
-        printf("snd_pcm_sw_params_current: %s\n", snd_strerror(ret));
+        fprintf(stderr, "snd_pcm_sw_params_current: %s\n", snd_strerror(ret));
         return EXIT_FAILURE;
     }
 
 
     ret = snd_pcm_sw_params_set_avail_min(pcm, sw_params, period_size_frames);
     if (ret < 0) {
-        printf("snd_pcm_sw_params_set_avail_min: %s\n", snd_strerror(ret));
+        fprintf(stderr, "snd_pcm_sw_params_set_avail_min: %s\n", snd_strerror(ret));
         return EXIT_FAILURE;
     }
 
     // ret = snd_pcm_sw_params_set_start_threshold(pcm, sw_params, 0);
     ret = snd_pcm_sw_params_set_start_threshold(pcm, sw_params, period_size_frames);
     if (ret < 0) {
-        printf("snd_pcm_sw_params_set_start_threshold: %s\n", snd_strerror(ret));
+        fprintf(stderr, "snd_pcm_sw_params_set_start_threshold: %s\n", snd_strerror(ret));
         return EXIT_FAILURE;
     }
 
     snd_pcm_sw_params(pcm, sw_params);
     if (ret < 0) {
-        printf("snd_pcm_sw_params: %s\n", snd_strerror(ret));
+        fprintf(stderr, "snd_pcm_sw_params: %s\n", snd_strerror(ret));
         return EXIT_FAILURE;
     }
 
