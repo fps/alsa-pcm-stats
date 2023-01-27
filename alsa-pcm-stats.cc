@@ -163,8 +163,6 @@ int main(int argc, char *argv[]) {
     pollfd *playback_pfds = new  pollfd[playback_pfds_count];
     int filled_playback_pfds = snd_pcm_poll_descriptors(playback_pcm, playback_pfds, playback_pfds_count);
 
-
-
     int capture_pfds_count = snd_pcm_poll_descriptors_count(capture_pcm);
     if (capture_pfds_count < 1) {
         fprintf(stderr, "poll descriptors count less than one\n");
@@ -173,8 +171,6 @@ int main(int argc, char *argv[]) {
 
     pollfd *capture_pfds = new pollfd[capture_pfds_count];
     int filled_capture_pfds = snd_pcm_poll_descriptors(capture_pcm, capture_pfds, capture_pfds_count);
-
-
 
     pollfd *pfds = new pollfd[filled_capture_pfds + filled_playback_pfds];
 
