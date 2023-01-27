@@ -71,7 +71,7 @@ int main(int argc, char *argv[]) {
         ("availability-threshold,a", po::value<int>(&availability_threshold)->default_value(-1), "the number of frames available for capture or playback used to determine when to read or write to pcm stream (-1 means a period size)")
         ("frame-read-write-limit,l", po::value<int>(&frame_read_write_limit)->default_value(-1), "limit for the number of frames written/read during a single read/write (-1 means a period-size * number-of-periods)")
         ("sample-size,s", po::value<int>(&sample_size)->default_value(1000), "the number of samples to collect for stats (might be less due how to alsa works)")
-        ("wait-for-poll-in-out,w", po::value<int>(&poll_in_out)->default_value(0), "whether to wait for POLLIN/POLLOUT")
+        ("wait-for-poll-in-out,w", po::value<int>(&poll_in_out)->default_value(1), "whether to wait for POLLIN/POLLOUT")
         ("sample-format,f", po::value<std::string>(&sample_format)->default_value("S32LE"), "the sample format. Available formats: S16LE, S32LE")
         ("show-header,o", po::value<int>(&show_header)->default_value(1), "whether to show a header in the output table")
     ;
@@ -214,8 +214,8 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-        bool should_write = false;
-        bool should_read = false;
+        bool should_write = true;
+        bool should_read = true;
 
          if (revents & POLLOUT) {
             data_samples[sample_index].poll_pollout = 1;
@@ -249,7 +249,7 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-        if (avail_playback >= availability_threshold) {
+        if (avail_playback >= availability_threshold && should_read) {
             ret = snd_pcm_writei(playback_pcm, buffer, std::max(std::min(avail_playback, frame_read_write_limit), availability_threshold));
             data_samples[sample_index].playback_written = ret;
     
@@ -264,7 +264,7 @@ int main(int argc, char *argv[]) {
             break;
         }
     
-        if (avail_capture >= availability_threshold) {
+        if (avail_capture >= availability_threshold && should_write) {
             ret = snd_pcm_readi(capture_pcm, buffer, std::max(std::min(avail_capture, frame_read_write_limit), availability_threshold));
             data_samples[sample_index].capture_read = ret;
     
