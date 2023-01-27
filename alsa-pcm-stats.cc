@@ -160,28 +160,14 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    pollfd *playback_pfds = new  pollfd[playback_pfds_count];
-    int filled_playback_pfds = snd_pcm_poll_descriptors(playback_pcm, playback_pfds, playback_pfds_count);
-
     int capture_pfds_count = snd_pcm_poll_descriptors_count(capture_pcm);
     if (capture_pfds_count < 1) {
         fprintf(stderr, "poll descriptors count less than one\n");
         return EXIT_FAILURE;
     }
 
-    pollfd *capture_pfds = new pollfd[capture_pfds_count];
-    int filled_capture_pfds = snd_pcm_poll_descriptors(capture_pcm, capture_pfds, capture_pfds_count);
-
-    pollfd *pfds = new pollfd[filled_capture_pfds + filled_playback_pfds];
-
-    for (int index = 0; index < filled_playback_pfds; ++index) {
-        pfds[index] = playback_pfds[index];
-    }
-
-    for (int index = 0; index < filled_capture_pfds; ++index) {
-        pfds[index + filled_playback_pfds] = capture_pfds[index];
-    }
-
+    pollfd *pfds = new pollfd[capture_pfds_count + playback_pfds_count];
+  
     std::vector<data> data_samples(sample_size);
 
     struct timespec;
@@ -190,8 +176,21 @@ int main(int argc, char *argv[]) {
 
     if (verbose) { fprintf(stderr, "starting to sample...\n"); }
 
-   while(true) {
-        ret = poll(pfds, filled_playback_pfds+filled_capture_pfds, 1000);
+    while(true) {
+        ret = snd_pcm_poll_descriptors(playback_pcm, pfds, playback_pfds_count);
+        if (ret != playback_pfds_count) {
+            fprintf(stderr, "wrong playback fd count\n");
+            exit(EXIT_FAILURE);
+        }
+
+        ret = snd_pcm_poll_descriptors(capture_pcm, pfds+playback_pfds_count, capture_pfds_count);
+        if (ret != capture_pfds_count) {
+            fprintf(stderr, "wrong playback fd count\n");
+            exit(EXIT_FAILURE);
+        }
+
+
+        ret = poll(pfds, playback_pfds_count + capture_pfds_count, 1000);
         if (ret < 0) {
             fprintf(stderr, "poll: %s\n", strerror(ret));
             break;
@@ -202,9 +201,10 @@ int main(int argc, char *argv[]) {
             break;
         }
 
+
         unsigned short revents = 0;
 
-        ret = snd_pcm_poll_descriptors_revents(playback_pcm, pfds, filled_playback_pfds, &revents);
+        ret = snd_pcm_poll_descriptors_revents(playback_pcm, pfds, playback_pfds_count, &revents);
         if (ret < 0) {
             fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
             break;
@@ -223,7 +223,7 @@ int main(int argc, char *argv[]) {
             
         }
 
-        ret = snd_pcm_poll_descriptors_revents(capture_pcm, pfds+filled_playback_pfds, filled_capture_pfds, &revents);
+        ret = snd_pcm_poll_descriptors_revents(capture_pcm, pfds + playback_pfds_count, capture_pfds_count, &revents);
         if (ret < 0) {
             fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
             break;
