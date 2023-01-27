@@ -69,7 +69,7 @@ int main(int argc, char *argv[]) {
         ("pcm-device-name,d", po::value<std::string>(&pcm_device_name)->default_value("default"), "the ALSA pcm device name string")
         ("priority,P", po::value<int>(&priority)->default_value(70), "SCHED_FIFO priority")
         ("availability-threshold,a", po::value<int>(&availability_threshold)->default_value(-1), "the number of frames available for capture or playback used to determine when to read or write to pcm stream (-1 means a period size)")
-        ("frame-read-write-limit,l", po::value<int>(&frame_read_write_limit)->default_value(-1), "limit for the number of frames written/read during a single read/write (-1 means a period-size * number-of-periods)")
+        ("frame-read-write-limit,l", po::value<int>(&frame_read_write_limit)->default_value(-1), "limit for the number of frames written/read during a single read/write (-1 means a period-size)")
         ("sample-size,s", po::value<int>(&sample_size)->default_value(1000), "the number of samples to collect for stats (might be less due how to alsa works)")
         ("wait-for-poll-in-out,w", po::value<int>(&poll_in_out)->default_value(1), "whether to wait for POLLIN/POLLOUT")
         ("sample-format,f", po::value<std::string>(&sample_format)->default_value("S32LE"), "the sample format. Available formats: S16LE, S32LE")
@@ -86,7 +86,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (frame_read_write_limit == -1) {
-        frame_read_write_limit = period_size_frames * num_periods;
+        frame_read_write_limit = period_size_frames;
     }
 
     if (availability_threshold == -1) {
