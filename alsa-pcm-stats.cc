@@ -18,6 +18,7 @@ int period_size_frames;
 int num_periods;
 int sampling_rate_hz;
 std::string pcm_device_name;
+std::string sample_format;
 int priority;
 int buffer_size;
 int sample_size;
@@ -27,8 +28,8 @@ int poll_in_out;
 int verbose;
 int show_header;
 
-typedef int32_t sample_t;
-// typedef short sample_t;
+// typedef int32_t sample_t;
+typedef int16_t sample_t;
 sample_t *buffer;
 
 struct data {
@@ -61,6 +62,7 @@ int main(int argc, char *argv[]) {
     po::options_description options_desc("Options");
     options_desc.add_options()
         ("help,h", "produce this help message")
+        ("verbose,v", po::value<int>(&verbose)->default_value(0), "whether to be a little more verbose")
         ("period-size,p", po::value<int>(&period_size_frames)->default_value(1024), "period size (audio frames)")
         ("number-of-periods,n", po::value<int>(&num_periods)->default_value(2), "number of periods")
         ("rate,r", po::value<int>(&sampling_rate_hz)->default_value(48000), "sampling rate (hz)")
@@ -70,8 +72,8 @@ int main(int argc, char *argv[]) {
         ("frame-read-write-limit,l", po::value<int>(&frame_read_write_limit)->default_value(-1), "limit for the number of frames written/read during a single read/write (-1 means a period-size * number-of-periods)")
         ("sample-size,s", po::value<int>(&sample_size)->default_value(1000), "the number of samples to collect for stats (might be less due how to alsa works)")
         ("wait-for-poll-in-out,w", po::value<int>(&poll_in_out)->default_value(0), "whether to wait for POLLIN/POLLOUT")
-        ("verbose,v", po::value<int>(&verbose)->default_value(0), "whether to be a little more verbose")
-        ("show-header,o", po::value<int>(&show_header)->default_value(0), "whether to show a header in the output table")
+        ("sample-format,f", po::value<std::string>(&sample_format)->default_value("S16LE"), "the sample format. Available formats: S16LE, S32LE")
+        ("show-header,o", po::value<int>(&show_header)->default_value(1), "whether to show a header in the output table")
     ;
 
     po::variables_map vm;
@@ -191,7 +193,7 @@ int main(int argc, char *argv[]) {
 
     if (verbose) { fprintf(stderr, "starting to sample...\n"); }
 
-    while(true) {
+   while(true) {
         ret = poll(pfds, filled_playback_pfds+filled_capture_pfds, 1000);
         if (ret < 0) {
             fprintf(stderr, "poll: %s\n", strerror(ret));
@@ -203,9 +205,6 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-        bool should_write = false;
-        bool should_read = false;
-
         unsigned short revents;
 
         ret = snd_pcm_poll_descriptors_revents(playback_pcm, pfds, filled_playback_pfds, &revents);
@@ -214,7 +213,10 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-        if (revents & POLLOUT) {
+        bool should_write = false;
+        bool should_read = false;
+
+         if (revents & POLLOUT) {
             data_samples[sample_index].poll_pollout = 1;
             if (poll_in_out) {
                 should_write = true;
@@ -306,19 +308,29 @@ int setup_pcm_device(snd_pcm_t *pcm) {
 
     ret = snd_pcm_hw_params_set_channels(pcm, params, 2);
     if (ret < 0) {
-        printf("snd_pcm_hw_params_set_channels: %s\n", snd_strerror(ret));
+        fprintf(stderr, "snd_pcm_hw_params_set_channels: %s\n", snd_strerror(ret));
         return EXIT_FAILURE;
     }
 
     ret = snd_pcm_hw_params_set_access(pcm, params, SND_PCM_ACCESS_RW_INTERLEAVED);
     if (ret < 0) {
-        printf("snd_pcm_hw_params_set_access: %s\n", snd_strerror(ret));
+        fprintf(stderr, "snd_pcm_hw_params_set_access: %s\n", snd_strerror(ret));
         return EXIT_FAILURE;
     }
 
-    ret = snd_pcm_hw_params_set_format(pcm, params, SND_PCM_FORMAT_S32_LE);
+    if (sample_format == "S16LE") {
+        ret = snd_pcm_hw_params_set_format(pcm, params, SND_PCM_FORMAT_S16_LE);
+    }
+    else if (sample_format == "S32LE") {
+        ret = snd_pcm_hw_params_set_format(pcm, params, SND_PCM_FORMAT_S32_LE);
+    }
+    else {
+        fprintf(stderr, "unsupported sample format\n");
+        return EXIT_FAILURE;
+    }
+
     if (ret < 0) {
-        printf("snd_pcm_hw_params_set_format: %s\n", snd_strerror(ret));
+        fprintf(stderr, "snd_pcm_hw_params_set_format: %s\n", snd_strerror(ret));
         return EXIT_FAILURE;
     }
 
