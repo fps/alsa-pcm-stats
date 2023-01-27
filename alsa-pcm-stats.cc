@@ -287,7 +287,7 @@ int main(int argc, char *argv[]) {
     }
     for (int sample_index = 0; sample_index < sample_size; ++sample_index) {
         data data_sample = data_samples[sample_index];
-        printf("%09ld %09ld %018d %017d %07d %06d %07d %07d\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available, data_sample.poll_pollout, data_sample.poll_pollin, data_sample.playback_written, data_sample.capture_read);
+        printf("%09ld %09ld %18d %17d %7d %6d %7d %7d\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available, data_sample.poll_pollout, data_sample.poll_pollin, data_sample.playback_written, data_sample.capture_read);
         if (data_sample.capture_available < 0 || data_sample.playback_available < 0) {
             break;
         }
