@@ -223,6 +223,8 @@ int main(int argc, char *argv[]) {
             
         }
 
+        revents = 0;
+
         ret = snd_pcm_poll_descriptors_revents(capture_pcm, pfds + playback_pfds_count, capture_pfds_count, &revents);
         if (ret < 0) {
             fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
