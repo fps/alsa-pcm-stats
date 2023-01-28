@@ -19,6 +19,8 @@ int num_periods;
 int sampling_rate_hz;
 std::string pcm_device_name;
 std::string sample_format;
+int input_channels;
+int output_channels;
 int priority;
 int buffer_size;
 int sample_size;
@@ -54,7 +56,7 @@ struct data {
 };
 
 
-int setup_pcm_device(snd_pcm_t *pcm);
+int setup_pcm_device(snd_pcm_t *pcm, int channels);
 
 int main(int argc, char *argv[]) {
     namespace po = boost::program_options;
@@ -67,13 +69,15 @@ int main(int argc, char *argv[]) {
         ("number-of-periods,n", po::value<int>(&num_periods)->default_value(2), "number of periods")
         ("rate,r", po::value<int>(&sampling_rate_hz)->default_value(48000), "sampling rate (hz)")
         ("pcm-device-name,d", po::value<std::string>(&pcm_device_name)->default_value("default"), "the ALSA pcm device name string")
+        ("input-channels,i", po::value<int>(&input_channels)->default_value(2), "the number of input channels")
+        ("output-channels,o", po::value<int>(&output_channels)->default_value(2), "the number of output channels")
         ("priority,P", po::value<int>(&priority)->default_value(70), "SCHED_FIFO priority")
         ("availability-threshold,a", po::value<int>(&availability_threshold)->default_value(-1), "the number of frames available for capture or playback used to determine when to read or write to pcm stream (-1 means a period size)")
         ("frame-read-write-limit,l", po::value<int>(&frame_read_write_limit)->default_value(-1), "limit for the number of frames written/read during a single read/write (-1 means a period-size)")
         ("sample-size,s", po::value<int>(&sample_size)->default_value(1000), "the number of samples to collect for stats (might be less due how to alsa works)")
         ("wait-for-poll-in-out,w", po::value<int>(&poll_in_out)->default_value(1), "whether to wait for POLLIN/POLLOUT")
         ("sample-format,f", po::value<std::string>(&sample_format)->default_value("S32LE"), "the sample format. Available formats: S16LE, S32LE")
-        ("show-header,o", po::value<int>(&show_header)->default_value(1), "whether to show a header in the output table")
+        ("show-header,e", po::value<int>(&show_header)->default_value(1), "whether to show a header in the output table")
     ;
 
     po::variables_map vm;
@@ -94,7 +98,7 @@ int main(int argc, char *argv[]) {
     }
 
     // 2 because stereo
-    buffer_size = 2 * num_periods * period_size_frames;
+    buffer_size = std::max(input_channels, output_channels) * num_periods * period_size_frames;
 
     buffer = new sample_t[buffer_size];
 
@@ -135,12 +139,12 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    ret = setup_pcm_device(playback_pcm);
+    ret = setup_pcm_device(playback_pcm, output_channels);
     if (ret != 0) {
         fprintf(stderr, "setup_pcm_device: %s\n", "Failed to setup playback device");
         return EXIT_FAILURE;
     }
-    ret = setup_pcm_device(capture_pcm);
+    ret = setup_pcm_device(capture_pcm, input_channels);
     if (ret != 0) {
         fprintf(stderr, "setup_pcm_device: %s\n", "Failed to setup capture device");
         return EXIT_FAILURE;
@@ -307,7 +311,7 @@ int main(int argc, char *argv[]) {
     return EXIT_SUCCESS;
 }
 
-int setup_pcm_device(snd_pcm_t *pcm) {
+int setup_pcm_device(snd_pcm_t *pcm, int channels) {
     if (verbose) { fprintf(stderr, "setting up pcm device...\n"); }
     int ret = 0;
 
@@ -316,7 +320,7 @@ int setup_pcm_device(snd_pcm_t *pcm) {
     snd_pcm_hw_params_alloca(&params);
     ret = snd_pcm_hw_params_any(pcm, params);
 
-    ret = snd_pcm_hw_params_set_channels(pcm, params, 2);
+    ret = snd_pcm_hw_params_set_channels(pcm, params, channels);
     if (ret < 0) {
         fprintf(stderr, "snd_pcm_hw_params_set_channels: %s\n", snd_strerror(ret));
         return EXIT_FAILURE;
