@@ -284,11 +284,17 @@ int main(int argc, char *argv[]) {
     if (verbose) { fprintf(stderr, "done sampling...\n"); } 
 
     if (show_header) {
-        printf("   tv.sec   tv.nsec available-playback available-capture POLLOUT POLLIN written    read\n");
+        printf("   tv.sec   tv.nsec available-playback available-capture POLLOUT POLLIN written    read total_written total_read difference\n");
     }
+
+    uint64_t total_written = 0;
+    uint64_t total_read = 0;
+
     for (int sample_index = 0; sample_index < sample_size; ++sample_index) {
         data data_sample = data_samples[sample_index];
-        printf("%09ld %09ld %18d %17d %7d %6d %7d %7d\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available, data_sample.poll_pollout, data_sample.poll_pollin, data_sample.playback_written, data_sample.capture_read);
+        total_written += data_sample.playback_written;
+        total_read += data_sample.capture_read;
+        printf("%09ld %09ld %18d %17d %7d %6d %7d %7d %13ld %10ld %10ld\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available, data_sample.poll_pollout, data_sample.poll_pollin, data_sample.playback_written, data_sample.capture_read, total_written, total_read, total_written - total_read);
         if (data_sample.capture_available < 0 || data_sample.playback_available < 0) {
             break;
         }
