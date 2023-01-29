@@ -75,7 +75,7 @@ int main(int argc, char *argv[]) {
         ("availability-threshold,a", po::value<int>(&availability_threshold)->default_value(-1), "the number of frames available for capture or playback used to determine when to read or write to pcm stream (-1 means a period size)")
         ("frame-read-write-limit,l", po::value<int>(&frame_read_write_limit)->default_value(-1), "limit for the number of frames written/read during a single read/write (-1 means a period-size)")
         ("sample-size,s", po::value<int>(&sample_size)->default_value(1000), "the number of samples to collect for stats (might be less due how to alsa works)")
-        ("wait-for-poll-in-out,w", po::value<int>(&poll_in_out)->default_value(1), "whether to wait for POLLIN/POLLOUT")
+        ("wait-for-poll-in-out,w", po::value<int>(&poll_in_out)->default_value(1), "whether to wait for POLLIN/POLLOUT: 0: do no wait; 1: wait for POLLIN or POLLOUT; 2: wait for POLLIN and POLLOUT")
         ("sample-format,f", po::value<std::string>(&sample_format)->default_value("S32LE"), "the sample format. Available formats: S16LE, S32LE")
         ("show-header,e", po::value<int>(&show_header)->default_value(1), "whether to show a header in the output table")
     ;
@@ -217,9 +217,12 @@ int main(int argc, char *argv[]) {
         bool should_write = true;
         bool should_read = true;
 
-        if (poll_in_out) {
-            if (revents & POLLOUT) {
-                data_samples[sample_index].poll_pollout = 1;
+         if (revents & POLLOUT) {
+            data_samples[sample_index].poll_pollout = 1;
+         }
+
+         if (poll_in_out) {
+            if (data_samples[sample_index].poll_pollout) {
                 should_write = true;
             } else {
                 should_write = false;
@@ -235,9 +238,12 @@ int main(int argc, char *argv[]) {
             break;
         }
 
+        if (revents & POLLIN) {
+            data_samples[sample_index].poll_pollin = 1;
+        }
+
         if (poll_in_out) {
-            if (revents & POLLIN) {
-                data_samples[sample_index].poll_pollin = 1;
+            if (data_samples[sample_index].poll_pollin) {
                 should_read = true;
             } else {
                 should_read = false;
