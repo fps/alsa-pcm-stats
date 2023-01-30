@@ -180,7 +180,10 @@ int main(int argc, char *argv[]) {
 
     if (verbose) { fprintf(stderr, "starting to sample...\n"); }
 
+    int64_t written = 0;
+
     while(true) {
+        // POLLING
         ret = snd_pcm_poll_descriptors(playback_pcm, pfds, playback_pfds_count);
         if (ret != playback_pfds_count) {
             fprintf(stderr, "wrong playback fd count\n");
@@ -206,6 +209,7 @@ int main(int argc, char *argv[]) {
         }
 
 
+        // REVENTS
         unsigned short revents = 0;
 
         ret = snd_pcm_poll_descriptors_revents(playback_pcm, pfds, playback_pfds_count, &revents);
@@ -214,20 +218,9 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-        bool should_write = true;
-        bool should_read = true;
 
-         if (revents & POLLOUT) {
+        if (revents & POLLOUT) {
             data_samples[sample_index].poll_pollout = 1;
-         }
-
-         if (poll_in_out) {
-            if (data_samples[sample_index].poll_pollout) {
-                should_write = true;
-            } else {
-                should_write = false;
-            }
-            
         }
 
         revents = 0;
@@ -242,12 +235,32 @@ int main(int argc, char *argv[]) {
             data_samples[sample_index].poll_pollin = 1;
         }
 
-        if (poll_in_out) {
-            if (data_samples[sample_index].poll_pollin) {
+
+        // 
+        bool should_write = false;
+        bool should_read = false;
+
+        switch (poll_in_out) {
+            case 0:
                 should_read = true;
-            } else {
-                should_read = false;
-            }
+                should_write = true;
+                break;
+
+            case 1:
+                should_read = data_samples[sample_index].poll_pollin;
+                should_write = data_samples[sample_index].poll_pollout;
+                break;
+
+            case 2:
+                should_read = should_write = data_samples[sample_index].poll_pollin && data_samples[sample_index].poll_pollout;
+                should_write = should_write || (written < (num_periods * period_size_frames));
+                // printf("should_write %d written %d\n", should_write, written);
+                break;
+
+            default:
+                fprintf(stderr, "polling policy not known.\n");
+                exit(EXIT_FAILURE);
+                break;
         }
 
         int avail_playback = snd_pcm_avail_update(playback_pcm);
@@ -262,7 +275,8 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-        if (avail_playback >= availability_threshold && should_write) {
+        if ((avail_playback >= availability_threshold) && should_write) {
+            printf("writing\n");
             ret = snd_pcm_writei(playback_pcm, buffer, std::max(std::min(avail_playback, frame_read_write_limit), availability_threshold));
             data_samples[sample_index].playback_written = ret;
     
@@ -270,6 +284,8 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "snd_pcm_writei: %s\n", snd_strerror(ret));
                 break;
             }
+
+            written += ret;
         }
 
         if (avail_capture < 0) {
@@ -277,7 +293,7 @@ int main(int argc, char *argv[]) {
             break;
         }
     
-        if (avail_capture >= availability_threshold && should_read){
+        if ((avail_capture >= availability_threshold) && should_read){
             ret = snd_pcm_readi(capture_pcm, buffer, std::max(std::min(avail_capture, frame_read_write_limit), availability_threshold));
             data_samples[sample_index].capture_read = ret;
     
@@ -296,7 +312,7 @@ int main(int argc, char *argv[]) {
     if (verbose) { fprintf(stderr, "done sampling...\n"); } 
 
     if (show_header) {
-        printf("   tv.sec   tv.nsec avail-write avail-read POLLOUT POLLIN written    read total-write total-read difference\n");
+        printf("   tv.sec   tv.nsec avail-w avail-r POLLOUT POLLIN written    read total-w total-r diff\n");
     }
 
     uint64_t total_written = 0;
@@ -306,7 +322,7 @@ int main(int argc, char *argv[]) {
         data data_sample = data_samples[sample_index];
         total_written += data_sample.playback_written;
         total_read += data_sample.capture_read;
-        printf("%09ld %09ld %11d %10d %7d %6d %7d %7d %11ld %10ld %10ld\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available, data_sample.poll_pollout, data_sample.poll_pollin, data_sample.playback_written, data_sample.capture_read, total_written, total_read, total_written - total_read);
+        printf("%09ld %09ld %7d %7d %7d %6d %7d %7d %7ld %7ld %4ld\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available, data_sample.poll_pollout, data_sample.poll_pollin, data_sample.playback_written, data_sample.capture_read, total_written, total_read, total_written - total_read);
         if (data_sample.capture_available < 0 || data_sample.playback_available < 0) {
             break;
         }
