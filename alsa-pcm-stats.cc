@@ -29,6 +29,7 @@ int frame_read_write_limit;
 int poll_in_out;
 int verbose;
 int show_header;
+int loop;
 
 typedef int32_t sample_t;
 // typedef int16_t sample_t;
@@ -42,6 +43,7 @@ struct data {
     int poll_pollout;
     int playback_written;
     int capture_read;
+    int fill;
     
     data() :
         playback_available(0),
@@ -50,7 +52,8 @@ struct data {
         poll_pollin(0),
         poll_pollout(0),
         playback_written(0),
-        capture_read(0) {
+        capture_read(0),
+        fill(0) {
     
     }
 };
@@ -74,6 +77,7 @@ int main(int argc, char *argv[]) {
         ("priority,P", po::value<int>(&priority)->default_value(70), "SCHED_FIFO priority")
         ("availability-threshold,a", po::value<int>(&availability_threshold)->default_value(-1), "the number of frames available for capture or playback used to determine when to read or write to pcm stream (-1 means a period size)")
         ("frame-read-write-limit,l", po::value<int>(&frame_read_write_limit)->default_value(-1), "limit for the number of frames written/read during a single read/write (-1 means a period-size)")
+        ("loop,O", po::value<int>(&loop)->default_value(0), "whether to only write up to the number of samples that we read so far")
         ("sample-size,s", po::value<int>(&sample_size)->default_value(1000), "the number of samples to collect for stats (might be less due how to alsa works)")
         ("wait-for-poll-in-out,w", po::value<int>(&poll_in_out)->default_value(1), "whether to wait for POLLIN/POLLOUT: 0: do no wait; 1: wait for POLLIN or POLLOUT; 2: wait for POLLIN and POLLOUT")
         ("sample-format,f", po::value<std::string>(&sample_format)->default_value("S32LE"), "the sample format. Available formats: S16LE, S32LE")
@@ -101,6 +105,9 @@ int main(int argc, char *argv[]) {
     buffer_size = std::max(input_channels, output_channels) * num_periods * period_size_frames;
 
     buffer = new sample_t[buffer_size];
+    for (int index = 0; index < buffer_size; ++index) {
+        buffer[index] = 0;
+    }
 
     int ret;
 
@@ -150,6 +157,9 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
+    // snd_pcm_nonblock(playback_pcm, 0);
+    // snd_pcm_nonblock(capture_pcm, 0);
+
     // #################### alsa pcm device linking
     ret = snd_pcm_link(playback_pcm, capture_pcm);
     if (ret < 0) {
@@ -181,8 +191,23 @@ int main(int argc, char *argv[]) {
     if (verbose) { fprintf(stderr, "starting to sample...\n"); }
 
     int64_t written = 0;
+    int fill = (num_periods) * period_size_frames;
 
     while(true) {
+        data_samples[sample_index].fill = fill;
+
+        int need_capture = 0;
+        int need_playback = 0;
+
+        if (loop && fill <= 0) {
+            need_capture = 1;
+        }
+
+        if (loop && fill > 0) {
+            need_playback = 1;
+        }
+
+        do {
         // POLLING
         ret = snd_pcm_poll_descriptors(playback_pcm, pfds, playback_pfds_count);
         if (ret != playback_pfds_count) {
@@ -196,8 +221,7 @@ int main(int argc, char *argv[]) {
             exit(EXIT_FAILURE);
         }
 
-
-        ret = poll(pfds, playback_pfds_count + capture_pfds_count, 1000);
+         ret = poll(pfds, playback_pfds_count + capture_pfds_count, 1000);
         if (ret < 0) {
             fprintf(stderr, "poll: %s\n", strerror(ret));
             break;
@@ -208,8 +232,8 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-
         // REVENTS
+
         unsigned short revents = 0;
 
         ret = snd_pcm_poll_descriptors_revents(playback_pcm, pfds, playback_pfds_count, &revents);
@@ -220,6 +244,7 @@ int main(int argc, char *argv[]) {
 
 
         if (revents & POLLOUT) {
+            need_playback = 0;
             data_samples[sample_index].poll_pollout = 1;
         }
 
@@ -233,10 +258,10 @@ int main(int argc, char *argv[]) {
 
         if (revents & POLLIN) {
             data_samples[sample_index].poll_pollin = 1;
+            need_capture = 0;
         }
+        } while (need_playback || need_capture);
 
-
-        // 
         bool should_write = false;
         bool should_read = false;
 
@@ -276,8 +301,14 @@ int main(int argc, char *argv[]) {
         }
 
         if ((avail_playback >= availability_threshold) && should_write) {
-            printf("writing\n");
-            ret = snd_pcm_writei(playback_pcm, buffer, std::max(std::min(avail_playback, frame_read_write_limit), availability_threshold));
+            int limit;
+            if (loop) {
+                limit = std::min(frame_read_write_limit, fill);
+            } else {
+                limit = frame_read_write_limit;
+            }
+            ret = snd_pcm_writei(playback_pcm, buffer, std::min(avail_playback, limit));
+            // ret = snd_pcm_writei(playback_pcm, buffer, std::max(std::min(avail_playback, limit), availability_threshold));
             data_samples[sample_index].playback_written = ret;
     
             if (ret < 0) {
@@ -286,6 +317,7 @@ int main(int argc, char *argv[]) {
             }
 
             written += ret;
+            fill -= ret;
         }
 
         if (avail_capture < 0) {
@@ -301,6 +333,8 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "snd_pcm_readi: %s\n", snd_strerror(ret));
                 break;
             }
+
+            fill += ret;
         }
 
         ++sample_index;
@@ -312,7 +346,7 @@ int main(int argc, char *argv[]) {
     if (verbose) { fprintf(stderr, "done sampling...\n"); } 
 
     if (show_header) {
-        printf("   tv.sec   tv.nsec avail-w avail-r POLLOUT POLLIN written    read total-w total-r diff\n");
+        printf("   tv.sec   tv.nsec avail-w avail-r POLLOUT POLLIN written    read total-w total-r diff fill\n");
     }
 
     uint64_t total_written = 0;
@@ -322,7 +356,7 @@ int main(int argc, char *argv[]) {
         data data_sample = data_samples[sample_index];
         total_written += data_sample.playback_written;
         total_read += data_sample.capture_read;
-        printf("%09ld %09ld %7d %7d %7d %6d %7d %7d %7ld %7ld %4ld\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available, data_sample.poll_pollout, data_sample.poll_pollin, data_sample.playback_written, data_sample.capture_read, total_written, total_read, total_written - total_read);
+        printf("%09ld %09ld %7d %7d %7d %6d %7d %7d %7ld %7ld %4ld %4d\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available, data_sample.poll_pollout, data_sample.poll_pollin, data_sample.playback_written, data_sample.capture_read, total_written, total_read, total_written - total_read, data_sample.fill);
         if (data_sample.capture_available < 0 || data_sample.playback_available < 0) {
             break;
         }
