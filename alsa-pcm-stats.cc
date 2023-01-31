@@ -113,8 +113,6 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    if (verbose) { fprintf(stderr, "opening alsa pcm devices...\n"); }
-
     // #################### alsa pcm device open
     if (verbose) { fprintf(stderr, "setting up playback device...\n"); }
 
@@ -180,23 +178,55 @@ int main(int argc, char *argv[]) {
     if (verbose) { fprintf(stderr, "starting to sample...\n"); }
 
     int64_t written = 0;
-    int fill = (num_periods) * period_size_frames;
+    int fill = 0;
+
+    // fill the whole playback buffer for a start
+    int avail_playback = snd_pcm_avail_update(playback_pcm);
+
+    if (avail_playback < 0) {
+        fprintf(stderr, "avail_playback: %s\n", snd_strerror(avail_playback));
+        return EXIT_FAILURE;
+    }
+
+    if (avail_playback != period_size_frames * num_periods) {
+        fprintf(stderr, "no full buffer available\n");
+        return EXIT_FAILURE;
+    }
+
+    ret = snd_pcm_writei(playback_pcm, buffer, period_size_frames * num_periods);
+    if (ret < 0) {
+        fprintf(stderr, "snd_pcm_writei: %s\n", snd_strerror(ret));
+        return EXIT_FAILURE;
+    }
+
+    if (ret != period_size_frames * num_periods) {
+        fprintf(stderr, "couldn't write a full buffer\n");
+        return EXIT_FAILURE;
+    }
 
     while(true) {
+        usleep(10);
         data_samples[sample_index].fill = fill;
 
         int need_capture = 0;
         int need_playback = 0;
 
+        // if (fill < period_size_frames) {
         if (fill <= 0) {
             need_capture = 1;
         }
 
+        //if (fill > period_size_frames) {
         if (fill > 0) {
             need_playback = 1;
         }
 
-        do {
+        need_capture = 1;
+        need_playback = 0;
+
+
+        if (false) {
+        // do {
             // POLLING
             ret = snd_pcm_poll_descriptors(playback_pcm, pfds, playback_pfds_count);
             if (ret != playback_pfds_count) {
@@ -212,16 +242,52 @@ int main(int argc, char *argv[]) {
     
             unsigned short revents;
     
-            if (need_capture) {
-                ret = poll(pfds + playback_pfds_count, capture_pfds_count, 1000);
+            if (need_capture && need_playback) {
+                ret = poll(pfds, playback_pfds_count + capture_pfds_count, 1000);
                 if (ret < 0) {
                     fprintf(stderr, "poll: %s\n", strerror(ret));
                     break;
                 }
+ 
+                if (ret == 0) {
+                    fprintf(stderr, "poll capture timeout\n");
+                    continue;
+                }
+                revents = 0;
+        
+                ret = snd_pcm_poll_descriptors_revents(capture_pcm, pfds + playback_pfds_count, capture_pfds_count, &revents);
+                if (ret < 0) {
+                    fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
+                    break;
+                }
+        
+                if (revents & POLLIN) {
+                    data_samples[sample_index].poll_pollin = 1;
+                    need_capture = 0;
+                }
+
+                revents = 0;
+    
+                ret = snd_pcm_poll_descriptors_revents(playback_pcm, pfds, playback_pfds_count, &revents);
+                if (ret < 0) {
+                    fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
+                    break;
+                }
+        
+                if (revents & POLLOUT) {
+                    need_playback = 0;
+                    data_samples[sample_index].poll_pollout = 1;
+                }
+              } else if (need_capture) {
+                ret = poll(pfds + playback_pfds_count, capture_pfds_count, 1000);
+                if (ret < 0) {
+                    fprintf(stderr, "poll capture: %s\n", strerror(ret));
+                    break;
+                }
         
                 if (ret == 0) {
-                    fprintf(stderr, "poll timeout\n");
-                    break;
+                    fprintf(stderr, "poll capture timeout\n");
+                    continue;
                 }
     
                 revents = 0;
@@ -236,17 +302,15 @@ int main(int argc, char *argv[]) {
                     data_samples[sample_index].poll_pollin = 1;
                     need_capture = 0;
                 }
-            } 
-    
-            if (need_playback && 0) {
+            } else if (need_playback) {
                 ret = poll(pfds, playback_pfds_count, 1000);
                 if (ret < 0) {
-                    fprintf(stderr, "poll: %s\n", strerror(ret));
+                    fprintf(stderr, "poll playback: %s\n", strerror(ret));
                     break;
                 }
         
                 if (ret == 0) {
-                    fprintf(stderr, "poll timeout\n");
+                    fprintf(stderr, "poll playback timeout\n");
                     break;
                 }
     
@@ -264,8 +328,9 @@ int main(int argc, char *argv[]) {
                     data_samples[sample_index].poll_pollout = 1;
                 }
             } 
-        } // while (need_playback || need_capture);
-        while (need_capture);
+        // } while (need_playback || need_capture);
+        // while (need_capture);
+        }
 
         int avail_playback = snd_pcm_avail_update(playback_pcm);
         int avail_capture = snd_pcm_avail_update(capture_pcm);
@@ -298,8 +363,8 @@ int main(int argc, char *argv[]) {
         }
 
         // if ((avail_playback >= 1) && should_write && (fill >= period_size_frames)) {
-        if (avail_playback >= 1) {
-            ret = snd_pcm_writei(playback_pcm, buffer, std::min(avail_playback, fill));
+        if (avail_playback >= period_size_frames && fill > period_size_frames) {
+            ret = snd_pcm_writei(playback_pcm, buffer, period_size_frames);
             // ret = snd_pcm_writei(playback_pcm, buffer, std::max(std::min(avail_playback, limit), availability_threshold));
             data_samples[sample_index].playback_written = ret;
     
@@ -310,6 +375,10 @@ int main(int argc, char *argv[]) {
 
             written += ret;
             fill -= ret;
+        }
+
+        if (data_samples[sample_index].playback_written == 0 && data_samples[sample_index].capture_read == 0) {
+            continue;
         }
 
         ++sample_index;
@@ -331,7 +400,7 @@ int main(int argc, char *argv[]) {
         data data_sample = data_samples[sample_index];
         total_written += data_sample.playback_written;
         total_read += data_sample.capture_read;
-        printf("%09ld %09ld %7d %7d %7d %6d %7d %7d %7ld %7ld %4ld %4d\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available, data_sample.poll_pollout, data_sample.poll_pollin, data_sample.playback_written, data_sample.capture_read, total_written, total_read, total_written - total_read, data_sample.fill);
+        printf("%09ld %09ld %7d %7d %7d %6d %7d %7d %7ld %7ld %4ld %4d\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available, data_sample.poll_pollout, data_sample.poll_pollin, data_sample.playback_written, data_sample.capture_read, total_written, total_read, total_read - total_written, data_sample.fill);
         if (data_sample.capture_available < 0 || data_sample.playback_available < 0) {
             break;
         }
