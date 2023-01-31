@@ -132,15 +132,10 @@ int main(int argc, char *argv[]) {
     if (verbose) { fprintf(stderr, "opening alsa pcm devices...\n"); }
 
     // #################### alsa pcm device open
+    if (verbose) { fprintf(stderr, "setting up playback device...\n"); }
+
     snd_pcm_t *playback_pcm;
     ret = snd_pcm_open(&playback_pcm, pcm_device_name.c_str(), SND_PCM_STREAM_PLAYBACK, SND_PCM_NONBLOCK);
-    if (ret < 0) {
-        fprintf(stderr, "snd_pcm_open: %s\n", snd_strerror(ret));
-        return EXIT_FAILURE;
-    }
-
-    snd_pcm_t *capture_pcm;
-    ret = snd_pcm_open(&capture_pcm, pcm_device_name.c_str(), SND_PCM_STREAM_CAPTURE, SND_PCM_NONBLOCK);
     if (ret < 0) {
         fprintf(stderr, "snd_pcm_open: %s\n", snd_strerror(ret));
         return EXIT_FAILURE;
@@ -151,6 +146,16 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "setup_pcm_device: %s\n", "Failed to setup playback device");
         return EXIT_FAILURE;
     }
+
+    if (verbose) { fprintf(stderr, "setting up capture device...\n"); }
+
+    snd_pcm_t *capture_pcm;
+    ret = snd_pcm_open(&capture_pcm, pcm_device_name.c_str(), SND_PCM_STREAM_CAPTURE, SND_PCM_NONBLOCK);
+    if (ret < 0) {
+        fprintf(stderr, "snd_pcm_open: %s\n", snd_strerror(ret));
+        return EXIT_FAILURE;
+    }
+
     ret = setup_pcm_device(capture_pcm, input_channels);
     if (ret != 0) {
         fprintf(stderr, "setup_pcm_device: %s\n", "Failed to setup capture device");
@@ -221,18 +226,31 @@ int main(int argc, char *argv[]) {
             exit(EXIT_FAILURE);
         }
 
-         ret = poll(pfds, playback_pfds_count + capture_pfds_count, 1000);
-        if (ret < 0) {
-            fprintf(stderr, "poll: %s\n", strerror(ret));
-            break;
-        }
-
-        if (ret == 0) {
-            fprintf(stderr, "poll timeout\n");
-            break;
-        }
-
-        // REVENTS
+        if (need_capture) {
+            ret = poll(pfds + playback_pfds_count, capture_pfds_count, 1000);
+            if (ret < 0) {
+                fprintf(stderr, "poll: %s\n", strerror(ret));
+                break;
+            }
+    
+            if (ret == 0) {
+                fprintf(stderr, "poll timeout\n");
+                break;
+            }
+        } 
+        if (need_playback) {
+            ret = poll(pfds, playback_pfds_count, 1000);
+            if (ret < 0) {
+                fprintf(stderr, "poll: %s\n", strerror(ret));
+                break;
+            }
+    
+            if (ret == 0) {
+                fprintf(stderr, "poll timeout\n");
+                break;
+            }
+        } 
+         // REVENTS
 
         unsigned short revents = 0;
 
@@ -368,7 +386,7 @@ int main(int argc, char *argv[]) {
 }
 
 int setup_pcm_device(snd_pcm_t *pcm, int channels) {
-    if (verbose) { fprintf(stderr, "setting up pcm device...\n"); }
+    // if (verbose) { fprintf(stderr, "setting up pcm device...\n"); }
     int ret = 0;
 
     // #################### alsa pcm device hardware parameters
