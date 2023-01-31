@@ -225,6 +225,18 @@ int main(int argc, char *argv[]) {
         need_playback = 0;
 
 
+        if (0) {
+        ret = poll(pfds, playback_pfds_count + capture_pfds_count, 1000);
+        if (ret < 0) {
+            fprintf(stderr, "poll: %s\n", strerror(ret));
+            break;
+        }
+ 
+        if (ret == 0) {
+            fprintf(stderr, "poll capture timeout\n");
+            continue;
+        }
+        }
         if (false) {
         // do {
             // POLLING
@@ -345,7 +357,7 @@ int main(int argc, char *argv[]) {
         }
     
         if (avail_capture >= 1){
-            ret = snd_pcm_readi(capture_pcm, buffer, std::min(avail_capture, period_size_frames * num_periods));
+            ret = snd_pcm_readi(capture_pcm, buffer, period_size_frames);
             // ret = snd_pcm_readi(capture_pcm, buffer, std::max(std::min(avail_capture, frame_read_write_limit), availability_threshold));
             data_samples[sample_index].capture_read = ret;
     
@@ -363,7 +375,7 @@ int main(int argc, char *argv[]) {
         }
 
         // if ((avail_playback >= 1) && should_write && (fill >= period_size_frames)) {
-        if (avail_playback >= period_size_frames && fill > period_size_frames) {
+        if (avail_playback >= period_size_frames && fill >= period_size_frames) {
             ret = snd_pcm_writei(playback_pcm, buffer, period_size_frames);
             // ret = snd_pcm_writei(playback_pcm, buffer, std::max(std::min(avail_playback, limit), availability_threshold));
             data_samples[sample_index].playback_written = ret;
@@ -375,10 +387,12 @@ int main(int argc, char *argv[]) {
 
             written += ret;
             fill -= ret;
+
+            // ++sample_index;
         }
 
         if (data_samples[sample_index].playback_written == 0 && data_samples[sample_index].capture_read == 0) {
-            continue;
+             continue;
         }
 
         ++sample_index;
