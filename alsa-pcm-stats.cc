@@ -24,12 +24,8 @@ int output_channels;
 int priority;
 int buffer_size;
 int sample_size;
-int availability_threshold;
-int frame_read_write_limit;
-int poll_in_out;
 int verbose;
 int show_header;
-int loop;
 
 typedef int32_t sample_t;
 // typedef int16_t sample_t;
@@ -75,11 +71,7 @@ int main(int argc, char *argv[]) {
         ("input-channels,i", po::value<int>(&input_channels)->default_value(2), "the number of input channels")
         ("output-channels,o", po::value<int>(&output_channels)->default_value(2), "the number of output channels")
         ("priority,P", po::value<int>(&priority)->default_value(70), "SCHED_FIFO priority")
-        ("availability-threshold,a", po::value<int>(&availability_threshold)->default_value(-1), "the number of frames available for capture or playback used to determine when to read or write to pcm stream (-1 means a period size)")
-        ("frame-read-write-limit,l", po::value<int>(&frame_read_write_limit)->default_value(-1), "limit for the number of frames written/read during a single read/write (-1 means a period-size)")
-        ("loop,O", po::value<int>(&loop)->default_value(0), "whether to only write up to the number of samples that we read so far")
         ("sample-size,s", po::value<int>(&sample_size)->default_value(1000), "the number of samples to collect for stats (might be less due how to alsa works)")
-        ("wait-for-poll-in-out,w", po::value<int>(&poll_in_out)->default_value(1), "whether to wait for POLLIN/POLLOUT: 0: do no wait; 1: wait for POLLIN or POLLOUT; 2: wait for POLLIN and POLLOUT")
         ("sample-format,f", po::value<std::string>(&sample_format)->default_value("S32LE"), "the sample format. Available formats: S16LE, S32LE")
         ("show-header,e", po::value<int>(&show_header)->default_value(1), "whether to show a header in the output table")
     ;
@@ -91,14 +83,6 @@ int main(int argc, char *argv[]) {
     if (vm.count("help")) {
         std::cout << options_desc << "\n";
         return EXIT_SUCCESS;
-    }
-
-    if (frame_read_write_limit == -1) {
-        frame_read_write_limit = period_size_frames;
-    }
-
-    if (availability_threshold == -1) {
-        availability_threshold = period_size_frames;
     }
 
     // 2 because stereo
@@ -204,107 +188,84 @@ int main(int argc, char *argv[]) {
         int need_capture = 0;
         int need_playback = 0;
 
-        if (loop && fill <= 0) {
+        if (fill <= 0) {
             need_capture = 1;
         }
 
-        if (loop && fill > 0) {
+        if (fill > 0) {
             need_playback = 1;
         }
 
         do {
-        // POLLING
-        ret = snd_pcm_poll_descriptors(playback_pcm, pfds, playback_pfds_count);
-        if (ret != playback_pfds_count) {
-            fprintf(stderr, "wrong playback fd count\n");
-            exit(EXIT_FAILURE);
-        }
-
-        ret = snd_pcm_poll_descriptors(capture_pcm, pfds+playback_pfds_count, capture_pfds_count);
-        if (ret != capture_pfds_count) {
-            fprintf(stderr, "wrong playback fd count\n");
-            exit(EXIT_FAILURE);
-        }
-
-        if (need_capture) {
-            ret = poll(pfds + playback_pfds_count, capture_pfds_count, 1000);
-            if (ret < 0) {
-                fprintf(stderr, "poll: %s\n", strerror(ret));
-                break;
-            }
-    
-            if (ret == 0) {
-                fprintf(stderr, "poll timeout\n");
-                break;
-            }
-        } 
-        if (need_playback) {
-            ret = poll(pfds, playback_pfds_count, 1000);
-            if (ret < 0) {
-                fprintf(stderr, "poll: %s\n", strerror(ret));
-                break;
-            }
-    
-            if (ret == 0) {
-                fprintf(stderr, "poll timeout\n");
-                break;
-            }
-        } 
-         // REVENTS
-
-        unsigned short revents = 0;
-
-        ret = snd_pcm_poll_descriptors_revents(playback_pcm, pfds, playback_pfds_count, &revents);
-        if (ret < 0) {
-            fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
-            break;
-        }
-
-
-        if (revents & POLLOUT) {
-            need_playback = 0;
-            data_samples[sample_index].poll_pollout = 1;
-        }
-
-        revents = 0;
-
-        ret = snd_pcm_poll_descriptors_revents(capture_pcm, pfds + playback_pfds_count, capture_pfds_count, &revents);
-        if (ret < 0) {
-            fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
-            break;
-        }
-
-        if (revents & POLLIN) {
-            data_samples[sample_index].poll_pollin = 1;
-            need_capture = 0;
-        }
-        } while (need_playback || need_capture);
-
-        bool should_write = false;
-        bool should_read = false;
-
-        switch (poll_in_out) {
-            case 0:
-                should_read = true;
-                should_write = true;
-                break;
-
-            case 1:
-                should_read = data_samples[sample_index].poll_pollin;
-                should_write = data_samples[sample_index].poll_pollout;
-                break;
-
-            case 2:
-                should_read = should_write = data_samples[sample_index].poll_pollin && data_samples[sample_index].poll_pollout;
-                should_write = should_write || (written < (num_periods * period_size_frames));
-                // printf("should_write %d written %d\n", should_write, written);
-                break;
-
-            default:
-                fprintf(stderr, "polling policy not known.\n");
+            // POLLING
+            ret = snd_pcm_poll_descriptors(playback_pcm, pfds, playback_pfds_count);
+            if (ret != playback_pfds_count) {
+                fprintf(stderr, "wrong playback fd count\n");
                 exit(EXIT_FAILURE);
-                break;
-        }
+            }
+    
+            ret = snd_pcm_poll_descriptors(capture_pcm, pfds+playback_pfds_count, capture_pfds_count);
+            if (ret != capture_pfds_count) {
+                fprintf(stderr, "wrong playback fd count\n");
+                exit(EXIT_FAILURE);
+            }
+    
+            unsigned short revents;
+    
+            if (need_capture) {
+                ret = poll(pfds + playback_pfds_count, capture_pfds_count, 1000);
+                if (ret < 0) {
+                    fprintf(stderr, "poll: %s\n", strerror(ret));
+                    break;
+                }
+        
+                if (ret == 0) {
+                    fprintf(stderr, "poll timeout\n");
+                    break;
+                }
+    
+                revents = 0;
+        
+                ret = snd_pcm_poll_descriptors_revents(capture_pcm, pfds + playback_pfds_count, capture_pfds_count, &revents);
+                if (ret < 0) {
+                    fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
+                    break;
+                }
+        
+                if (revents & POLLIN) {
+                    data_samples[sample_index].poll_pollin = 1;
+                    need_capture = 0;
+                }
+            } 
+    
+            if (need_playback && 0) {
+                ret = poll(pfds, playback_pfds_count, 1000);
+                if (ret < 0) {
+                    fprintf(stderr, "poll: %s\n", strerror(ret));
+                    break;
+                }
+        
+                if (ret == 0) {
+                    fprintf(stderr, "poll timeout\n");
+                    break;
+                }
+    
+                revents = 0;
+    
+                ret = snd_pcm_poll_descriptors_revents(playback_pcm, pfds, playback_pfds_count, &revents);
+                if (ret < 0) {
+                    fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
+                    break;
+                }
+        
+        
+                if (revents & POLLOUT) {
+                    need_playback = 0;
+                    data_samples[sample_index].poll_pollout = 1;
+                }
+            } 
+        } // while (need_playback || need_capture);
+        while (need_capture);
 
         int avail_playback = snd_pcm_avail_update(playback_pcm);
         int avail_capture = snd_pcm_avail_update(capture_pcm);
@@ -313,19 +274,32 @@ int main(int argc, char *argv[]) {
         data_samples[sample_index].playback_available = avail_playback;
         data_samples[sample_index].capture_available = avail_capture;
 
+        if (avail_capture < 0) {
+            fprintf(stderr, "avail_capture: %s\n", snd_strerror(avail_capture));
+            break;
+        }
+    
+        if (avail_capture >= 1){
+            ret = snd_pcm_readi(capture_pcm, buffer, std::min(avail_capture, period_size_frames * num_periods));
+            // ret = snd_pcm_readi(capture_pcm, buffer, std::max(std::min(avail_capture, frame_read_write_limit), availability_threshold));
+            data_samples[sample_index].capture_read = ret;
+    
+            if (ret < 0) {
+                fprintf(stderr, "snd_pcm_readi: %s\n", snd_strerror(ret));
+                break;
+            }
+
+            fill += ret;
+        }
+
         if (avail_playback < 0) {
             fprintf(stderr, "avail_playback: %s\n", snd_strerror(avail_playback));
             break;
         }
 
-        if ((avail_playback >= availability_threshold) && should_write) {
-            int limit;
-            if (loop) {
-                limit = std::min(frame_read_write_limit, fill);
-            } else {
-                limit = frame_read_write_limit;
-            }
-            ret = snd_pcm_writei(playback_pcm, buffer, std::min(avail_playback, limit));
+        // if ((avail_playback >= 1) && should_write && (fill >= period_size_frames)) {
+        if (avail_playback >= 1) {
+            ret = snd_pcm_writei(playback_pcm, buffer, std::min(avail_playback, fill));
             // ret = snd_pcm_writei(playback_pcm, buffer, std::max(std::min(avail_playback, limit), availability_threshold));
             data_samples[sample_index].playback_written = ret;
     
@@ -336,23 +310,6 @@ int main(int argc, char *argv[]) {
 
             written += ret;
             fill -= ret;
-        }
-
-        if (avail_capture < 0) {
-            fprintf(stderr, "avail_capture: %s\n", snd_strerror(avail_capture));
-            break;
-        }
-    
-        if ((avail_capture >= availability_threshold) && should_read){
-            ret = snd_pcm_readi(capture_pcm, buffer, std::max(std::min(avail_capture, frame_read_write_limit), availability_threshold));
-            data_samples[sample_index].capture_read = ret;
-    
-            if (ret < 0) {
-                fprintf(stderr, "snd_pcm_readi: %s\n", snd_strerror(ret));
-                break;
-            }
-
-            fill += ret;
         }
 
         ++sample_index;
