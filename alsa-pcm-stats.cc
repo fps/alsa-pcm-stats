@@ -55,12 +55,6 @@ struct data {
     }
 };
 
-
-// struct timespec {
-//     time_t tv_sec;        /* seconds */
-//     long   tv_nsec;       /* nanoseconds */
-// };
-
 int setup_pcm_device(snd_pcm_t *pcm, int channels);
 
 int main(int argc, char *argv[]) {
@@ -92,7 +86,6 @@ int main(int argc, char *argv[]) {
         return EXIT_SUCCESS;
     }
 
-    // 2 because stereo
     buffer_size = std::max(input_channels, output_channels) * num_periods * period_size_frames;
 
     buffer = new sample_t[buffer_size];
@@ -151,9 +144,6 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    // snd_pcm_nonblock(playback_pcm, 0);
-    // snd_pcm_nonblock(capture_pcm, 0);
-
     // #################### alsa pcm device linking
     ret = snd_pcm_link(playback_pcm, capture_pcm);
     if (ret < 0) {
@@ -208,7 +198,7 @@ int main(int argc, char *argv[]) {
     
         if (avail_capture >= period_size_frames){
             ret = snd_pcm_readi(capture_pcm, buffer, period_size_frames);
-            // ret = snd_pcm_readi(capture_pcm, buffer, std::max(std::min(avail_capture, frame_read_write_limit), availability_threshold));
+
             data_samples[sample_index].capture_read = ret;
     
             if (ret < 0) {
@@ -231,10 +221,9 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-        // if ((avail_playback >= 1) && should_write && (fill >= period_size_frames)) {
         if (avail_playback >= period_size_frames && fill >= period_size_frames) {
             ret = snd_pcm_writei(playback_pcm, buffer, period_size_frames);
-            // ret = snd_pcm_writei(playback_pcm, buffer, std::max(std::min(avail_playback, limit), availability_threshold));
+
             data_samples[sample_index].playback_written = ret;
     
             if (ret < 0) {
@@ -254,11 +243,6 @@ int main(int argc, char *argv[]) {
         if (sample_index >= sample_size) {
             break;
         }
-
-        // if (data_samples[sample_index].playback_written == 0 && data_samples[sample_index].capture_read == 0) {
-        //      continue;
-        // }
-
     }
 
     if (verbose) { fprintf(stderr, "done sampling...\n"); } 
@@ -286,7 +270,6 @@ int main(int argc, char *argv[]) {
 }
 
 int setup_pcm_device(snd_pcm_t *pcm, int channels) {
-    // if (verbose) { fprintf(stderr, "setting up pcm device...\n"); }
     int ret = 0;
 
     // #################### alsa pcm device hardware parameters
