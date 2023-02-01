@@ -76,7 +76,7 @@ int main(int argc, char *argv[]) {
         ("sample-format,f", po::value<std::string>(&sample_format)->default_value("S32LE"), "the sample format. Available formats: S16LE, S32LE")
         ("show-header,e", po::value<int>(&show_header)->default_value(1), "whether to show a header in the output table")
         ("busy,b", po::value<int>(&busy_sleep_us)->default_value(10), "the number of microseconds to sleep each cycle")
-        ("sleep,l", po::value<int>(&sleep_percent)->default_value(0), "the percentage of a period to sleep after reading a period")
+        ("load,l", po::value<int>(&sleep_percent)->default_value(0), "the percentage of a period to sleep after reading a period")
     ;
 
     po::variables_map vm;
