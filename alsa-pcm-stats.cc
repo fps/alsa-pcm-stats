@@ -27,6 +27,7 @@ int sample_size;
 int verbose;
 int show_header;
 int sleep_percent;
+int busy_sleep_us;
 
 typedef int32_t sample_t;
 // typedef int16_t sample_t;
@@ -74,6 +75,7 @@ int main(int argc, char *argv[]) {
         ("sample-size,s", po::value<int>(&sample_size)->default_value(1000), "the number of samples to collect for stats (might be less due how to alsa works)")
         ("sample-format,f", po::value<std::string>(&sample_format)->default_value("S32LE"), "the sample format. Available formats: S16LE, S32LE")
         ("show-header,e", po::value<int>(&show_header)->default_value(1), "whether to show a header in the output table")
+        ("busy,b", po::value<int>(&busy_sleep_us)->default_value(10), "the number of microseconds to sleep each cycle")
         ("sleep,l", po::value<int>(&sleep_percent)->default_value(0), "the percentage of a period to sleep after reading a period")
     ;
 
@@ -185,7 +187,14 @@ int main(int argc, char *argv[]) {
     }
 
     while(true) {
-        usleep(10);
+        /*
+        timespec ts;
+        ts.tv_sec = 0;
+        ts.tv_nsec = busy_sleep_us * 1000;
+        nanosleep(&ts, NULL);
+        */
+        usleep(busy_sleep_us);
+        
         data_samples[sample_index].fill = fill;
 
         clock_gettime(CLOCK_MONOTONIC, &data_samples[sample_index].wakeup_time);
