@@ -193,7 +193,7 @@ int main(int argc, char *argv[]) {
 
         if (avail_capture < 0) {
             fprintf(stderr, "avail_capture: %s\n", snd_strerror(avail_capture));
-            break;
+            return EXIT_FAILURE;;
         }
     
         if (avail_capture >= period_size_frames){
@@ -214,26 +214,32 @@ int main(int argc, char *argv[]) {
             nanosleep(&ts, NULL);
         }
 
-        int avail_playback = snd_pcm_avail_update(playback_pcm);
 
-        if (avail_playback < 0) {
-            fprintf(stderr, "avail_playback: %s\n", snd_strerror(avail_playback));
-            break;
-        }
-
-        if (avail_playback >= period_size_frames && fill >= period_size_frames) {
-            ret = snd_pcm_writei(playback_pcm, buffer, period_size_frames);
-
-            data_samples[sample_index].playback_written = ret;
+        while (true) {
+            avail_playback = snd_pcm_avail_update(playback_pcm);
     
-            if (ret < 0) {
-                fprintf(stderr, "snd_pcm_writei: %s\n", snd_strerror(ret));
+            if (avail_playback < 0) {
+                fprintf(stderr, "avail_playback: %s\n", snd_strerror(avail_playback));
+                return EXIT_FAILURE;;
+            }
+    
+            if (avail_playback < period_size_frames || fill < period_size_frames) {
                 break;
             }
-
-            written += ret;
-            fill -= ret;
-
+    
+            if (avail_playback >= period_size_frames && fill >= period_size_frames) {
+                ret = snd_pcm_writei(playback_pcm, buffer, period_size_frames);
+    
+                data_samples[sample_index].playback_written += ret;
+        
+                if (ret < 0) {
+                    fprintf(stderr, "snd_pcm_writei: %s\n", snd_strerror(ret));
+                    return EXIT_FAILURE;;
+                }
+    
+                written += ret;
+                fill -= ret;
+            }
         }
 
         if (data_samples[sample_index].playback_written == 0 && data_samples[sample_index].capture_read == 0) continue;
