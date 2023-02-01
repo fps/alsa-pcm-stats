@@ -193,7 +193,7 @@ int main(int argc, char *argv[]) {
 
         if (avail_capture < 0) {
             fprintf(stderr, "avail_capture: %s\n", snd_strerror(avail_capture));
-            return EXIT_FAILURE;;
+            goto done;
         }
     
         if (avail_capture >= period_size_frames){
@@ -203,7 +203,7 @@ int main(int argc, char *argv[]) {
     
             if (ret < 0) {
                 fprintf(stderr, "snd_pcm_readi: %s\n", snd_strerror(ret));
-                break;
+                goto done;
             }
 
             fill += ret;
@@ -220,7 +220,7 @@ int main(int argc, char *argv[]) {
     
             if (avail_playback < 0) {
                 fprintf(stderr, "avail_playback: %s\n", snd_strerror(avail_playback));
-                return EXIT_FAILURE;;
+                goto done;
             }
     
             if (avail_playback < period_size_frames || fill < period_size_frames) {
@@ -234,7 +234,7 @@ int main(int argc, char *argv[]) {
         
                 if (ret < 0) {
                     fprintf(stderr, "snd_pcm_writei: %s\n", snd_strerror(ret));
-                    return EXIT_FAILURE;;
+                    goto done;
                 }
     
                 written += ret;
@@ -252,6 +252,8 @@ int main(int argc, char *argv[]) {
             break;
         }
     }
+
+    done: 
 
     if (verbose) { fprintf(stderr, "done sampling...\n"); } 
 
