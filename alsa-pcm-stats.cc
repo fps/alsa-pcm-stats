@@ -236,6 +236,8 @@ int main(int argc, char *argv[]) {
 
         }
 
+        if (data_samples[sample_index].playback_written == 0 && data_samples[sample_index].capture_read == 0) continue;
+
         data_samples[sample_index].playback_available = avail_playback;
         data_samples[sample_index].capture_available = avail_capture;
 
