@@ -26,6 +26,7 @@ int buffer_size;
 int sample_size;
 int verbose;
 int show_header;
+int sleep_percent;
 
 typedef int32_t sample_t;
 // typedef int16_t sample_t;
@@ -55,6 +56,11 @@ struct data {
 };
 
 
+// struct timespec {
+//     time_t tv_sec;        /* seconds */
+//     long   tv_nsec;       /* nanoseconds */
+// };
+
 int setup_pcm_device(snd_pcm_t *pcm, int channels);
 
 int main(int argc, char *argv[]) {
@@ -74,6 +80,7 @@ int main(int argc, char *argv[]) {
         ("sample-size,s", po::value<int>(&sample_size)->default_value(1000), "the number of samples to collect for stats (might be less due how to alsa works)")
         ("sample-format,f", po::value<std::string>(&sample_format)->default_value("S32LE"), "the sample format. Available formats: S16LE, S32LE")
         ("show-header,e", po::value<int>(&show_header)->default_value(1), "whether to show a header in the output table")
+        ("sleep,l", po::value<int>(&sleep_percent)->default_value(0), "the percentage of a period to sleep after reading a period")
     ;
 
     po::variables_map vm;
@@ -170,8 +177,6 @@ int main(int argc, char *argv[]) {
     pollfd *pfds = new pollfd[capture_pfds_count + playback_pfds_count];
   
     std::vector<data> data_samples(sample_size);
-
-    struct timespec;
 
     int sample_index = 0;
 
@@ -344,19 +349,15 @@ int main(int argc, char *argv[]) {
         // while (need_capture);
         }
 
-        int avail_playback = snd_pcm_avail_update(playback_pcm);
-        int avail_capture = snd_pcm_avail_update(capture_pcm);
-
         clock_gettime(CLOCK_MONOTONIC, &data_samples[sample_index].wakeup_time);
-        data_samples[sample_index].playback_available = avail_playback;
-        data_samples[sample_index].capture_available = avail_capture;
+        int avail_capture = snd_pcm_avail_update(capture_pcm);
 
         if (avail_capture < 0) {
             fprintf(stderr, "avail_capture: %s\n", snd_strerror(avail_capture));
             break;
         }
     
-        if (avail_capture >= 1){
+        if (avail_capture >= period_size_frames){
             ret = snd_pcm_readi(capture_pcm, buffer, period_size_frames);
             // ret = snd_pcm_readi(capture_pcm, buffer, std::max(std::min(avail_capture, frame_read_write_limit), availability_threshold));
             data_samples[sample_index].capture_read = ret;
@@ -367,7 +368,14 @@ int main(int argc, char *argv[]) {
             }
 
             fill += ret;
+
+            timespec ts;
+            ts.tv_sec = 0;
+            ts.tv_nsec = 1e9f * ((float)sleep_percent/100.f) * ((float)period_size_frames / (float)sampling_rate_hz);
+            nanosleep(&ts, NULL);
         }
+
+        int avail_playback = snd_pcm_avail_update(playback_pcm);
 
         if (avail_playback < 0) {
             fprintf(stderr, "avail_playback: %s\n", snd_strerror(avail_playback));
@@ -388,17 +396,20 @@ int main(int argc, char *argv[]) {
             written += ret;
             fill -= ret;
 
-            // ++sample_index;
         }
 
-        if (data_samples[sample_index].playback_written == 0 && data_samples[sample_index].capture_read == 0) {
-             continue;
-        }
+        data_samples[sample_index].playback_available = avail_playback;
+        data_samples[sample_index].capture_available = avail_capture;
 
         ++sample_index;
         if (sample_index >= sample_size) {
             break;
         }
+
+        // if (data_samples[sample_index].playback_written == 0 && data_samples[sample_index].capture_read == 0) {
+        //      continue;
+        // }
+
     }
 
     if (verbose) { fprintf(stderr, "done sampling...\n"); } 
