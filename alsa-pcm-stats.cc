@@ -8,6 +8,7 @@
 #include <pthread.h>
 #include <time.h>
 #include <sys/mman.h>
+#include <sched.h>
 
 #include <string>
 #include <boost/program_options.hpp>
@@ -222,6 +223,8 @@ int main(int argc, char *argv[]) {
         */
         // usleep(busy_sleep_us);
         // POLLING
+
+        /*
         ret = snd_pcm_poll_descriptors(playback_pcm, pfds, playback_pfds_count);
         if (ret != playback_pfds_count) {
             fprintf(stderr, "wrong playback fd count. frame: %d\n", sample_index);
@@ -244,6 +247,7 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "poll timeout. frame: %d\n", sample_index);
             goto done;
         }
+        */
         
         data_samples[sample_index].fill = fill;
 
@@ -300,6 +304,7 @@ int main(int argc, char *argv[]) {
                 fill -= ret;
             }
         }
+        // sched_yield();
 
         if (data_samples[sample_index].playback_written == 0 && data_samples[sample_index].capture_read == 0) continue;
 
