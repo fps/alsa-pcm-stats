@@ -165,6 +165,7 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
+    /* 
     // #################### alsa pcm device poll descriptors
     int playback_pfds_count = snd_pcm_poll_descriptors_count(playback_pcm);
     if (playback_pfds_count < 1) {
@@ -179,7 +180,7 @@ int main(int argc, char *argv[]) {
     }
 
     pollfd *pfds = new pollfd[capture_pfds_count + playback_pfds_count];
-
+    */
 
     std::vector<data> data_samples(sample_size);
 
@@ -191,7 +192,7 @@ int main(int argc, char *argv[]) {
     int fill = 0;
 
     // fill the whole playback buffer for a start
-    int avail_playback = snd_pcm_avail_update(playback_pcm);
+    int avail_playback = snd_pcm_avail(playback_pcm);
 
     if (avail_playback < 0) {
         fprintf(stderr, "avail_playback: %s\n", snd_strerror(avail_playback));
@@ -214,7 +215,22 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
+    uint64_t cycles = 0;
+
     while(true) {
+        ++cycles;
+        snd_pcm_state_t state;
+
+        state = snd_pcm_state(playback_pcm);
+        if (state == SND_PCM_STATE_XRUN) {
+            fprintf(stderr, "xrun\n");
+            goto done;
+        }
+        state = snd_pcm_state(capture_pcm);
+        if (state == SND_PCM_STATE_XRUN) {
+            fprintf(stderr, "xrun\n");
+            goto done;
+        }
         /*
         timespec ts;
         ts.tv_sec = 0;
@@ -224,7 +240,7 @@ int main(int argc, char *argv[]) {
         // usleep(busy_sleep_us);
         // POLLING
 
-        /*
+        /* 
         ret = snd_pcm_poll_descriptors(playback_pcm, pfds, playback_pfds_count);
         if (ret != playback_pfds_count) {
             fprintf(stderr, "wrong playback fd count. frame: %d\n", sample_index);
@@ -252,15 +268,15 @@ int main(int argc, char *argv[]) {
         data_samples[sample_index].fill = fill;
 
         clock_gettime(CLOCK_MONOTONIC, &data_samples[sample_index].wakeup_time);
-        int avail_capture = snd_pcm_avail_update(capture_pcm);
+        int avail_capture = snd_pcm_avail(capture_pcm);
 
         if (avail_capture < 0) {
             fprintf(stderr, "avail_capture: %s. frame: %d\n", snd_strerror(avail_capture), sample_index);
             goto done;
         }
     
-        if (avail_capture >= processing_buffer_frames){
-            ret = snd_pcm_readi(capture_pcm, buffer, processing_buffer_frames);
+        if (avail_capture >= processing_buffer_frames && fill < (buffer_size - processing_buffer_frames)){
+            ret = snd_pcm_readi(capture_pcm, buffer + fill, processing_buffer_frames);
 
             data_samples[sample_index].capture_read = ret;
     
@@ -279,7 +295,7 @@ int main(int argc, char *argv[]) {
 
 
         while (true) {
-            avail_playback = snd_pcm_avail_update(playback_pcm);
+            avail_playback = snd_pcm_avail(playback_pcm);
     
             if (avail_playback < 0) {
                 fprintf(stderr, "avail_playback: %s. frame: %d\n", snd_strerror(avail_playback), sample_index);
@@ -287,11 +303,11 @@ int main(int argc, char *argv[]) {
             }
     
             if (avail_playback < processing_buffer_frames || fill < processing_buffer_frames) {
-                break;
+                goto playback_done;
             }
     
             if (avail_playback >= processing_buffer_frames && fill >= processing_buffer_frames) {
-                ret = snd_pcm_writei(playback_pcm, buffer, processing_buffer_frames);
+                ret = snd_pcm_writei(playback_pcm, buffer + (fill - processing_buffer_frames), processing_buffer_frames);
     
                 data_samples[sample_index].playback_written += ret;
         
@@ -304,9 +320,15 @@ int main(int argc, char *argv[]) {
                 fill -= ret;
             }
         }
+
+        playback_done:
+
         // sched_yield();
 
-        if (data_samples[sample_index].playback_written == 0 && data_samples[sample_index].capture_read == 0) continue;
+        if (data_samples[sample_index].playback_written == 0 && data_samples[sample_index].capture_read == 0) {
+            usleep(1);
+            continue;
+        }
 
         data_samples[sample_index].playback_available = avail_playback;
         data_samples[sample_index].capture_available = avail_capture;
