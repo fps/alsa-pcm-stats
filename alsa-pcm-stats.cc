@@ -35,6 +35,10 @@ typedef int32_t sample_t;
 // typedef int16_t sample_t;
 sample_t *buffer;
 
+sample_t *ringbuffer;
+int head = 0;
+int tail = 0;
+
 struct data {
     int valid;
     int playback_available;
@@ -105,6 +109,11 @@ int main(int argc, char *argv[]) {
     buffer = new sample_t[buffer_size];
     for (int index = 0; index < buffer_size; ++index) {
         buffer[index] = 0;
+    }
+
+    ringbuffer = new sample_t[buffer_size];
+    for (int index = 0; index < buffer_size; ++index) {
+        ringbuffer[index] = 0;
     }
 
     int ret;
@@ -276,7 +285,7 @@ int main(int argc, char *argv[]) {
         }
     
         if (avail_capture >= processing_buffer_frames && fill < (buffer_size - processing_buffer_frames)){
-            ret = snd_pcm_readi(capture_pcm, buffer + fill, processing_buffer_frames);
+            ret = snd_pcm_readi(capture_pcm, buffer, processing_buffer_frames);
 
             data_samples[sample_index].capture_read = ret;
     
@@ -287,6 +296,11 @@ int main(int argc, char *argv[]) {
 
             fill += ret;
 
+            for (int index = 0; index < ret; ++index) {
+                ringbuffer[(head + index) % buffer_size] = buffer[index];
+            }
+            head = (head + ret) % buffer_size;
+
             timespec ts;
             ts.tv_sec = 0;
             ts.tv_nsec = 1e9f * ((float)sleep_percent/100.f) * ((float)processing_buffer_frames / (float)sampling_rate_hz);
@@ -294,6 +308,7 @@ int main(int argc, char *argv[]) {
         }
 
 
+        int drain = 0;
         while (true) {
             avail_playback = snd_pcm_avail(playback_pcm);
     
@@ -307,8 +322,14 @@ int main(int argc, char *argv[]) {
             }
     
             if (avail_playback >= processing_buffer_frames && fill >= processing_buffer_frames) {
-                ret = snd_pcm_writei(playback_pcm, buffer + (fill - processing_buffer_frames), processing_buffer_frames);
+                for (int index = 0; index < ret; ++index) {
+                    buffer[index] = ringbuffer[(tail + index) % buffer_size];
+                }
+
+                ret = snd_pcm_writei(playback_pcm, buffer, processing_buffer_frames);
     
+                tail = (tail + ret) % buffer_size;
+
                 data_samples[sample_index].playback_written += ret;
         
                 if (ret < 0) {
@@ -318,6 +339,7 @@ int main(int argc, char *argv[]) {
     
                 written += ret;
                 fill -= ret;
+                drain += ret;
             }
         }
 
