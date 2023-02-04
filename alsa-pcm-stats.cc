@@ -23,7 +23,8 @@ std::string sample_format;
 int input_channels;
 int output_channels;
 int priority;
-int buffer_size;
+int buffer_size_samples;
+int buffer_size_frames;
 int sample_size;
 int verbose;
 int show_header;
@@ -97,22 +98,23 @@ int main(int argc, char *argv[]) {
         exit(EXIT_SUCCESS);
     }
 
-    buffer_size = std::max(input_channels, output_channels) * num_periods * period_size_frames;
+    buffer_size_frames = num_periods * period_size_frames;
+    buffer_size_samples = std::max(input_channels, output_channels) * buffer_size_frames;
 
-    if (2 * processing_buffer_frames > buffer_size) {
+    if (2 * processing_buffer_frames > buffer_size_frames) {
         fprintf(stderr, "period-size * number-of-periods < processing-buffer-size.\n");
         exit(EXIT_FAILURE);
     }
 
     if (processing_buffer_frames == -1) processing_buffer_frames = period_size_frames;
 
-    buffer = new sample_t[buffer_size];
-    for (int index = 0; index < buffer_size; ++index) {
+    buffer = new sample_t[buffer_size_samples];
+    for (int index = 0; index < buffer_size_samples; ++index) {
         buffer[index] = 0;
     }
 
-    ringbuffer = new sample_t[buffer_size];
-    for (int index = 0; index < buffer_size; ++index) {
+    ringbuffer = new sample_t[buffer_size_samples];
+    for (int index = 0; index < buffer_size_samples; ++index) {
         ringbuffer[index] = 0;
     }
 
@@ -284,7 +286,7 @@ int main(int argc, char *argv[]) {
             goto done;
         }
     
-        if (avail_capture >= processing_buffer_frames && fill < (buffer_size - processing_buffer_frames)){
+        if ((avail_capture >= processing_buffer_frames) && (fill < (buffer_size_frames - processing_buffer_frames))) {
             ret = snd_pcm_readi(capture_pcm, buffer, processing_buffer_frames);
 
             data_samples[sample_index].capture_read = ret;
@@ -297,9 +299,9 @@ int main(int argc, char *argv[]) {
             fill += ret;
 
             for (int index = 0; index < ret; ++index) {
-                ringbuffer[(head + index) % buffer_size] = buffer[index];
+                ringbuffer[(head + index) % buffer_size_frames] = buffer[index];
             }
-            head = (head + ret) % buffer_size;
+            head = (head + ret) % buffer_size_frames;
 
             timespec ts;
             ts.tv_sec = 0;
@@ -323,12 +325,12 @@ int main(int argc, char *argv[]) {
     
             if (avail_playback >= processing_buffer_frames && fill >= processing_buffer_frames) {
                 for (int index = 0; index < ret; ++index) {
-                    buffer[index] = ringbuffer[(tail + index) % buffer_size];
+                    buffer[index] = ringbuffer[(tail + index) % buffer_size_frames];
                 }
 
                 ret = snd_pcm_writei(playback_pcm, buffer, processing_buffer_frames);
     
-                tail = (tail + ret) % buffer_size;
+                tail = (tail + ret) % buffer_size_frames;
 
                 data_samples[sample_index].playback_written += ret;
         
@@ -427,10 +429,6 @@ int setup_pcm_device(snd_pcm_t *pcm, int channels) {
     if (ret < 0) {
         fprintf(stderr, "snd_pcm_hw_params_set_rate (%d): %s\n", sampling_rate_hz, snd_strerror(ret));
         exit(EXIT_FAILURE);
-    }
-
-    for (int index = 0; index < buffer_size; ++index) {
-        buffer[index] = 0;
     }
 
     ret = snd_pcm_hw_params_set_buffer_size(pcm, params, period_size_frames * num_periods);
