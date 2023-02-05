@@ -317,7 +317,7 @@ int main(int argc, char *argv[]) {
                 case 4:
                     for (int index = 0; index < ret; ++index) {
                         for (int channel = 0; channel < min_channels; ++channel) {
-                            ringbuffer[(input_channels * (head + index)) % buffer_size_frames] = ((int32_t*)input_buffer)[input_channels * index + channel] / (float)INT32_MAX;
+                            ringbuffer[input_channels * ((head + index) % buffer_size_frames) + channel] = ((int32_t*)input_buffer)[input_channels * index + channel] / (float)INT32_MAX;
                         }
                     }
                     break;
@@ -353,14 +353,14 @@ int main(int argc, char *argv[]) {
                     case 2:
                         for (int index = 0; index < ret; ++index) {
                             for (int channel = 0; channel < min_channels; ++channel) {
-                                ((int16_t*)output_buffer)[output_channels  * index + channel] = INT16_MAX * ringbuffer[(output_channels * (tail + index)) % buffer_size_frames];
+                                ((int16_t*)output_buffer)[output_channels * index + channel] = INT16_MAX * ringbuffer[output_channels * ((tail + index) % buffer_size_frames) + channel];
                             }
                         }
                         break;
                     case 4:
                         for (int index = 0; index < ret; ++index) {
                             for (int channel = 0; channel < min_channels; ++channel) {
-                                ((int32_t*)output_buffer)[output_channels * index + channel] = INT32_MAX * ringbuffer[(output_channels * (tail + index)) % buffer_size_frames];
+                                ((int32_t*)output_buffer)[output_channels * index + channel] = INT32_MAX * ringbuffer[output_channels * ((tail + index) % buffer_size_frames) + channel];
                             }
                         }
                         break;
