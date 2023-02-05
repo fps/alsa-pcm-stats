@@ -23,8 +23,8 @@ std::string sample_format;
 int input_channels;
 int output_channels;
 int priority;
-int buffer_size_samples;
 int buffer_size_frames;
+int sizeof_sample;
 int sample_size;
 int verbose;
 int show_header;
@@ -32,11 +32,10 @@ int sleep_percent;
 int busy_sleep_us;
 int processing_buffer_frames;
 
-typedef int32_t sample_t;
-// typedef int16_t sample_t;
-sample_t *buffer;
+uint8_t *input_buffer;
+uint8_t *output_buffer;
 
-sample_t *ringbuffer;
+float *ringbuffer;
 int head = 0;
 int tail = 0;
 
@@ -99,7 +98,7 @@ int main(int argc, char *argv[]) {
     }
 
     buffer_size_frames = num_periods * period_size_frames;
-    buffer_size_samples = std::max(input_channels, output_channels) * buffer_size_frames;
+    // buffer_size_samples = std::max(input_channels, output_channels) * buffer_size_frames;
 
     if (2 * processing_buffer_frames > buffer_size_frames) {
         fprintf(stderr, "period-size * number-of-periods < processing-buffer-size.\n");
@@ -108,13 +107,21 @@ int main(int argc, char *argv[]) {
 
     if (processing_buffer_frames == -1) processing_buffer_frames = period_size_frames;
 
-    buffer = new sample_t[buffer_size_samples];
-    for (int index = 0; index < buffer_size_samples; ++index) {
-        buffer[index] = 0;
+    const int min_channels = std::min(input_channels, output_channels);
+    const int sizeof_sample = (sample_format == "S16LE") ? 2 : 4;
+
+    input_buffer = new uint8_t[buffer_size_frames * sizeof_sample * input_channels];
+    for (int index = 0; index < buffer_size_frames * sizeof_sample * input_channels; ++index) {
+        input_buffer[index] = 0;
     }
 
-    ringbuffer = new sample_t[buffer_size_samples];
-    for (int index = 0; index < buffer_size_samples; ++index) {
+    output_buffer = new uint8_t[buffer_size_frames * sizeof_sample * output_channels];
+    for (int index = 0; index < buffer_size_frames * sizeof_sample * output_channels; ++index) {
+        output_buffer[index] = 0;
+    }
+
+    ringbuffer = new float[buffer_size_frames * min_channels];
+    for (int index = 0; index < buffer_size_frames * min_channels; ++index) {
         ringbuffer[index] = 0;
     }
 
@@ -215,7 +222,7 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    ret = snd_pcm_writei(playback_pcm, buffer, period_size_frames * num_periods);
+    ret = snd_pcm_writei(playback_pcm, output_buffer, period_size_frames * num_periods);
     if (ret < 0) {
         fprintf(stderr, "snd_pcm_writei: %s\n", snd_strerror(ret));
         exit(EXIT_FAILURE);
@@ -237,6 +244,7 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "xrun\n");
             goto done;
         }
+
         state = snd_pcm_state(capture_pcm);
         if (state == SND_PCM_STATE_XRUN) {
             fprintf(stderr, "xrun\n");
@@ -287,7 +295,7 @@ int main(int argc, char *argv[]) {
         }
     
         if ((avail_capture >= processing_buffer_frames) && (fill < (buffer_size_frames - processing_buffer_frames))) {
-            ret = snd_pcm_readi(capture_pcm, buffer, processing_buffer_frames);
+            ret = snd_pcm_readi(capture_pcm, input_buffer, processing_buffer_frames);
 
             data_samples[sample_index].capture_read = ret;
     
@@ -298,9 +306,27 @@ int main(int argc, char *argv[]) {
 
             fill += ret;
 
-            for (int index = 0; index < ret; ++index) {
-                ringbuffer[(head + index) % buffer_size_frames] = buffer[index];
+            switch (sizeof_sample) {
+                case 2:
+                    for (int index = 0; index < ret; ++index) {
+                        for (int channel = 0; channel < min_channels; ++channel) {
+                            ringbuffer[input_channels * ((head + index) % buffer_size_frames) + channel] = ((int16_t*)input_buffer)[input_channels * index + channel] / (float)INT16_MAX;
+                        }
+                    }
+                    break;
+                case 4:
+                    for (int index = 0; index < ret; ++index) {
+                        for (int channel = 0; channel < min_channels; ++channel) {
+                            ringbuffer[(input_channels * (head + index)) % buffer_size_frames] = ((int32_t*)input_buffer)[input_channels * index + channel] / (float)INT32_MAX;
+                        }
+                    }
+                    break;
+                default:
+                    fprintf(stderr, "unhandled sample format\n");
+                    goto done;
+ 
             }
+
             head = (head + ret) % buffer_size_frames;
 
             timespec ts;
@@ -310,7 +336,6 @@ int main(int argc, char *argv[]) {
         }
 
 
-        int drain = 0;
         while (true) {
             avail_playback = snd_pcm_avail(playback_pcm);
     
@@ -324,11 +349,26 @@ int main(int argc, char *argv[]) {
             }
     
             if (avail_playback >= processing_buffer_frames && fill >= processing_buffer_frames) {
-                for (int index = 0; index < ret; ++index) {
-                    buffer[index] = ringbuffer[(tail + index) % buffer_size_frames];
+                switch (sizeof_sample) {
+                    case 2:
+                        for (int index = 0; index < ret; ++index) {
+                            for (int channel = 0; channel < min_channels; ++channel) {
+                                ((int16_t*)output_buffer)[output_channels  * index + channel] = INT16_MAX * ringbuffer[(output_channels * (tail + index)) % buffer_size_frames];
+                            }
+                        }
+                        break;
+                    case 4:
+                        for (int index = 0; index < ret; ++index) {
+                            for (int channel = 0; channel < min_channels; ++channel) {
+                                ((int32_t*)output_buffer)[output_channels * index + channel] = INT32_MAX * ringbuffer[(output_channels * (tail + index)) % buffer_size_frames];
+                            }
+                        }
+                        break;
+                    default:
+                        fprintf(stderr, "unhandled sample format\n");
+                        goto done;
                 }
-
-                ret = snd_pcm_writei(playback_pcm, buffer, processing_buffer_frames);
+                ret = snd_pcm_writei(playback_pcm, output_buffer, processing_buffer_frames);
     
                 tail = (tail + ret) % buffer_size_frames;
 
@@ -341,7 +381,6 @@ int main(int argc, char *argv[]) {
     
                 written += ret;
                 fill -= ret;
-                drain += ret;
             }
         }
 
