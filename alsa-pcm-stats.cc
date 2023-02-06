@@ -83,7 +83,7 @@ int main(int argc, char *argv[]) {
         ("sample-size,s", po::value<int>(&sample_size)->default_value(1000), "the number of samples to collect for stats (might be less due how to alsa works)")
         ("sample-format,f", po::value<std::string>(&sample_format)->default_value("S32LE"), "the sample format. Available formats: S16LE, S32LE")
         ("show-header,e", po::value<int>(&show_header)->default_value(1), "whether to show a header in the output table")
-        ("busy,b", po::value<int>(&busy_sleep_us)->default_value(10), "the number of microseconds to sleep each cycle")
+        ("busy,b", po::value<int>(&busy_sleep_us)->default_value(1), "the number of microseconds to sleep everytime when nothing was done")
         ("processing-buffer-size,c", po::value<int>(&processing_buffer_frames)->default_value(-1), "the processing buffer size (audio frames)")
         ("load,l", po::value<int>(&sleep_percent)->default_value(0), "the percentage of a period to sleep after reading a period")
     ;
@@ -241,13 +241,13 @@ int main(int argc, char *argv[]) {
 
         state = snd_pcm_state(playback_pcm);
         if (state == SND_PCM_STATE_XRUN) {
-            fprintf(stderr, "xrun\n");
+            fprintf(stderr, "playback xrun\n");
             goto done;
         }
 
         state = snd_pcm_state(capture_pcm);
         if (state == SND_PCM_STATE_XRUN) {
-            fprintf(stderr, "xrun\n");
+            fprintf(stderr, "capture xrun\n");
             goto done;
         }
         /*
@@ -389,7 +389,7 @@ int main(int argc, char *argv[]) {
         // sched_yield();
 
         if (data_samples[sample_index].playback_written == 0 && data_samples[sample_index].capture_read == 0) {
-            usleep(1);
+            usleep(busy_sleep_us);
             continue;
         }
 
