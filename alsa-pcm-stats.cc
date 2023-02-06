@@ -9,6 +9,7 @@
 #include <time.h>
 #include <sys/mman.h>
 #include <sched.h>
+#include <malloc.h>
 
 #include <string>
 #include <boost/program_options.hpp>
@@ -97,6 +98,29 @@ int main(int argc, char *argv[]) {
         exit(EXIT_SUCCESS);
     }
 
+    int ret;
+
+    if (verbose) { fprintf(stderr, "tuning memory allocator...\n"); }
+    ret = mallopt(M_MMAP_MAX, 0);
+    if (ret != 1) {
+        fprintf(stderr, "mallopt M_MMAP_MAX: %s\n", strerror(ret));
+        exit(EXIT_FAILURE);
+    }
+
+    ret = mallopt(M_TRIM_THRESHOLD, -1);
+    if (ret != 1) {
+        fprintf(stderr, "mallopt M_TRIM_THRESHOLD: %s\n", strerror(ret));
+        exit(EXIT_FAILURE);
+    }
+
+    if (verbose) { fprintf(stderr, "locking memory...\n"); }
+    ret = mlockall(MCL_CURRENT | MCL_FUTURE);
+    if (ret != 0) {
+        fprintf(stderr, "mlockall: %s\n", strerror(ret));
+        exit(EXIT_FAILURE);
+    }
+
+
     buffer_size_frames = num_periods * period_size_frames;
     // buffer_size_samples = std::max(input_channels, output_channels) * buffer_size_frames;
 
@@ -125,14 +149,6 @@ int main(int argc, char *argv[]) {
         ringbuffer[index] = 0;
     }
 
-    int ret;
-
-    if (verbose) { fprintf(stderr, "locking memory...\n"); }
-    ret = mlockall(MCL_FUTURE);
-    if (ret != 0) {
-        fprintf(stderr, "mlockall: %s\n", strerror(ret));
-        exit(EXIT_FAILURE);
-    }
 
     if (verbose) { fprintf(stderr, "setting SCHED_FIFO at priority: %d\n", priority); }
 
