@@ -136,10 +136,13 @@ int main(int argc, char *argv[]) {
     free(dummy_heap);
 
     {
+        #pragma GCC diagnostic push
+        #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
         unsigned char dummy_stack[1024 * 1024];
         for (int index = 0; index < (1024 * 1024); index += sysconf(_SC_PAGESIZE)) {
             dummy_stack[index] = 1;
         }
+        #pragma GCC diagnostic pop
     } 
 
     buffer_size_frames = num_periods * period_size_frames;
