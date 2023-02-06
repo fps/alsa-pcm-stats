@@ -31,6 +31,7 @@ int verbose;
 int show_header;
 int sleep_percent;
 int busy_sleep_us;
+int prefault_heap_size_mb;
 int processing_buffer_frames;
 
 uint8_t *input_buffer;
@@ -85,6 +86,7 @@ int main(int argc, char *argv[]) {
         ("sample-format,f", po::value<std::string>(&sample_format)->default_value("S32LE"), "the sample format. Available formats: S16LE, S32LE")
         ("show-header,e", po::value<int>(&show_header)->default_value(1), "whether to show a header in the output table")
         ("busy,b", po::value<int>(&busy_sleep_us)->default_value(1), "the number of microseconds to sleep everytime when nothing was done")
+        ("prefault-heap-size,a", po::value<int>(&prefault_heap_size_mb)->default_value(100), "the number of megabytes of heap space to prefault")
         ("processing-buffer-size,c", po::value<int>(&processing_buffer_frames)->default_value(-1), "the processing buffer size (audio frames)")
         ("load,l", po::value<int>(&sleep_percent)->default_value(0), "the percentage of a period to sleep after reading a period")
     ;
@@ -119,7 +121,26 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "mlockall: %s\n", strerror(ret));
         exit(EXIT_FAILURE);
     }
+  
+    if (verbose) { fprintf(stderr, "prefaulting heap memory...\n"); }
+    char *dummy_heap = (char*)malloc(1024 * 1024 * prefault_heap_size_mb);
+    if (!dummy_heap) {
+        fprintf(stderr, "failed to allocate prefaulting heap memory\n");
+        exit(EXIT_FAILURE);
+    }
 
+    for (int index = 0; index < (1024 * 1024 * prefault_heap_size_mb); index += sysconf(_SC_PAGESIZE)) {
+        dummy_heap[index] = 1;
+    }
+
+    free(dummy_heap);
+
+    {
+        unsigned char dummy_stack[1024 * 1024];
+        for (int index = 0; index < (1024 * 1024); index += sysconf(_SC_PAGESIZE)) {
+            dummy_stack[index] = 1;
+        }
+    } 
 
     buffer_size_frames = num_periods * period_size_frames;
     // buffer_size_samples = std::max(input_channels, output_channels) * buffer_size_frames;
