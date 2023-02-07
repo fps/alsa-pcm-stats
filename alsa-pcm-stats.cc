@@ -51,6 +51,7 @@ struct data {
     int playback_written;
     int capture_read;
     int fill;
+    int drain;
     
     data() :
         valid(0),
@@ -61,7 +62,8 @@ struct data {
         poll_pollout(0),
         playback_written(0),
         capture_read(0),
-        fill(0) {
+        fill(0),
+        drain(0) {
     
     }
 };
@@ -232,7 +234,6 @@ int main(int argc, char *argv[]) {
     int fill = 0;
     int drain = period_size_frames * num_periods;
 
-    // fill the whole playback buffer for a start
     int avail_playback = snd_pcm_avail(playback_pcm);
 
     if (avail_playback < 0) {
@@ -277,7 +278,6 @@ int main(int argc, char *argv[]) {
             goto done;
         }
        
-        data_sample.fill = fill;
 
         clock_gettime(CLOCK_MONOTONIC, &data_sample.wakeup_time);
         int avail_capture = snd_pcm_avail(capture_pcm);
@@ -292,14 +292,13 @@ int main(int argc, char *argv[]) {
         if (avail_capture > 0) {
             int frames_read = 0;
             while(frames_read < avail_capture) {
-                ret = snd_pcm_readi(capture_pcm, input_buffer, avail_capture - frames_read);
+                ret = snd_pcm_readi(capture_pcm, input_buffer + sizeof_sample * input_channels * frames_read, avail_capture - frames_read);
 
                 if (ret < 0) {
                     fprintf(stderr, "snd_pcm_readi: %s. frame: %d\n", snd_strerror(ret), sample_index);
                     goto done;
                 }
                 frames_read += ret;
-    
             }
 
             data_sample.capture_read = frames_read;
@@ -316,7 +315,6 @@ int main(int argc, char *argv[]) {
             drain += processing_buffer_frames;
         }
  
-
         if (drain > 0) {
             avail_playback = snd_pcm_avail(playback_pcm);
     
@@ -332,7 +330,7 @@ int main(int argc, char *argv[]) {
 
                 int frames_written = 0;
                 while (frames_written < frames_to_write) {
-                    ret = snd_pcm_writei(playback_pcm, output_buffer, frames_to_write - frames_written);
+                    ret = snd_pcm_writei(playback_pcm, output_buffer + sizeof_sample * output_channels * frames_written, frames_to_write - frames_written);
                     frames_written += ret;
 
                     if (ret < 0) {
@@ -341,7 +339,6 @@ int main(int argc, char *argv[]) {
                     }
                 }
                 data_sample.playback_written = frames_to_write;
-    
                 drain -= frames_to_write;
             }
         }
@@ -351,6 +348,8 @@ int main(int argc, char *argv[]) {
             continue;
         }
   
+        data_sample.drain = drain;
+        data_sample.fill = fill;
         data_sample.valid = 1;
 
         ++sample_index;
@@ -364,7 +363,7 @@ int main(int argc, char *argv[]) {
     if (verbose) { fprintf(stderr, "done sampling...\n"); } 
 
     if (show_header) {
-        printf("   tv.sec   tv.nsec avail-w avail-r POLLOUT POLLIN written    read total-w total-r diff fill\n");
+        printf("   tv.sec   tv.nsec avail-w avail-r POLLOUT POLLIN written    read total-w total-r diff fill drain\n");
     }
 
     uint64_t total_written = 0;
@@ -374,7 +373,7 @@ int main(int argc, char *argv[]) {
         data data_sample = data_samples[sample_index];
         total_written += data_sample.playback_written;
         total_read += data_sample.capture_read;
-        printf("%09ld %09ld %7d %7d %7d %6d %7d %7d %7ld %7ld %4ld %4d\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available, data_sample.poll_pollout, data_sample.poll_pollin, data_sample.playback_written, data_sample.capture_read, total_written, total_read, total_read - total_written, data_sample.fill);
+        printf("%09ld %09ld %7d %7d %7d %6d %7d %7d %7ld %7ld %4ld %4d %5d\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available, data_sample.poll_pollout, data_sample.poll_pollin, data_sample.playback_written, data_sample.capture_read, total_written, total_read, total_read - total_written, data_sample.fill, data_sample.drain);
         if (!data_sample.valid) { break; }
     }
 
