@@ -289,7 +289,8 @@ int main(int argc, char *argv[]) {
             goto done;
         }
     
-        if (avail_capture > 0) {
+        // if (avail_capture > 0 && (fill < (num_periods * period_size_frames - avail_capture))) {
+        if (avail_capture) {
             int frames_read = 0;
             while(frames_read < avail_capture) {
                 ret = snd_pcm_readi(capture_pcm, input_buffer + sizeof_sample * input_channels * frames_read, avail_capture - frames_read);
@@ -338,8 +339,8 @@ int main(int argc, char *argv[]) {
                         goto done;
                     }
                 }
-                data_sample.playback_written = frames_to_write;
-                drain -= frames_to_write;
+                data_sample.playback_written = frames_written;
+                drain -= frames_written;
             }
         }
 
