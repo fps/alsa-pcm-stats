@@ -42,6 +42,7 @@ int head = 0;
 int tail = 0;
 
 struct data {
+    uint64_t cycles;
     int valid;
     int playback_available;
     int capture_available;
@@ -54,6 +55,7 @@ struct data {
     int drain;
     
     data() :
+        cycles(0),
         valid(0),
         playback_available(0),
         capture_available(0),
@@ -260,7 +262,6 @@ int main(int argc, char *argv[]) {
     uint64_t cycles = 0;
 
     while(true) {
-        ++cycles;
 
         data data_sample;
 
@@ -348,6 +349,10 @@ int main(int argc, char *argv[]) {
             }
         }
 
+        data_sample.cycles = cycles;
+
+        ++cycles;
+
         if (data_sample.playback_written == 0 && data_sample.capture_read == 0) {
             usleep(busy_sleep_us);
             continue;
@@ -370,7 +375,7 @@ int main(int argc, char *argv[]) {
     if (verbose) { fprintf(stderr, "done sampling...\n"); } 
 
     if (show_header) {
-        printf("   tv.sec   tv.nsec avail-w avail-r POLLOUT POLLIN written    read total-w total-r diff fill drain\n");
+        printf("   tv.sec   tv.nsec avail-w avail-r POLLOUT POLLIN written    read total-w total-r diff fill drain       cycles\n");
     }
 
     uint64_t total_written = 0;
@@ -380,7 +385,7 @@ int main(int argc, char *argv[]) {
         data data_sample = data_samples[sample_index];
         total_written += data_sample.playback_written;
         total_read += data_sample.capture_read;
-        printf("%09ld %09ld %7d %7d %7d %6d %7d %7d %7ld %7ld %4ld %4d %5d\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available, data_sample.poll_pollout, data_sample.poll_pollin, data_sample.playback_written, data_sample.capture_read, total_written, total_read, total_read - total_written, data_sample.fill, data_sample.drain);
+        printf("%09ld %09ld %7d %7d %7d %6d %7d %7d %7ld %7ld %4ld %4d %5d %12ld\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available, data_sample.poll_pollout, data_sample.poll_pollin, data_sample.playback_written, data_sample.capture_read, total_written, total_read, total_read - total_written, data_sample.fill, data_sample.drain, data_sample.cycles);
         if (!data_sample.valid) { break; }
     }
 
