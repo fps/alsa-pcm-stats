@@ -153,7 +153,7 @@ int main(int argc, char *argv[]) {
     // buffer_size_samples = std::max(input_channels, output_channels) * buffer_size_frames;
 
     if (2 * processing_buffer_frames > buffer_size_frames) {
-        fprintf(stderr, "period-size * number-of-periods < processing-buffer-size.\n");
+        fprintf(stderr, "period-size * number-of-periods < 2 * processing-buffer-size.\n");
         exit(EXIT_FAILURE);
     }
 
@@ -171,7 +171,7 @@ int main(int argc, char *argv[]) {
     for (int index = 0; index < buffer_size_frames * sizeof_sample * output_channels; ++index) {
         output_buffer[index] = 0;
     }
-
+  
     ringbuffer = new float[buffer_size_frames * min_channels];
     for (int index = 0; index < buffer_size_frames * min_channels; ++index) {
         ringbuffer[index] = 0;
@@ -308,7 +308,21 @@ int main(int argc, char *argv[]) {
     
                 data_sample.capture_read = frames_read;
                 fill += frames_read;
-           }
+
+                for (int channel_index = 0; channel_index < min_channels; ++channel_index) {
+                    for (int sample_index = 0; sample_index < frames_read; ++sample_index) {
+                        switch(sizeof_sample) {
+                            case 2:
+                                ringbuffer[(head + sample_index) * min_channels + channel_index] = ((int16_t*)input_buffer)[sample_index * input_channels + channel_index] / (float)INT16_MAX;
+                                break;
+                            case 4:
+                                ringbuffer[(head + sample_index) * min_channels + channel_index] = ((int32_t*)input_buffer)[sample_index * input_channels + channel_index] / (float)INT32_MAX;
+                                break;
+                        }
+                    }
+                }
+                head = (head + frames_read) % buffer_size_frames;
+            }
         }
 
         if (fill >= processing_buffer_frames) {
@@ -333,6 +347,21 @@ int main(int argc, char *argv[]) {
 
             if (avail_playback > 0)  {
                 int frames_to_write = std::min(drain, avail_playback);
+
+                for (int channel_index = 0; channel_index < min_channels; ++channel_index) {
+                    for (int sample_index = 0; sample_index < frames_to_write; ++sample_index) {
+                        switch(sizeof_sample) {
+                            case 2:
+                                ((int16_t*)output_buffer)[sample_index * output_channels + channel_index] = INT16_MAX * ringbuffer[(tail + sample_index) * min_channels + channel_index];
+                                break;
+                            case 4:
+                                ((int32_t*)output_buffer)[sample_index * output_channels + channel_index] = INT32_MAX * ringbuffer[(tail + sample_index) * min_channels + channel_index];
+                                break;
+                        }
+                    }
+                }
+                tail = (tail + frames_to_write) % buffer_size_frames;
+              
 
                 int frames_written = 0;
                 while (frames_written < frames_to_write) {
