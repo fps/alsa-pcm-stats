@@ -262,7 +262,7 @@ int main(int argc, char *argv[]) {
     while(true) {
         ++cycles;
 
-        data &data_sample = data_samples[sample_index];
+        data data_sample;
 
         snd_pcm_state_t state;
 
@@ -295,7 +295,7 @@ int main(int argc, char *argv[]) {
             if (avail_capture > 0) {
                 int frames_to_read = std::min(processing_buffer_frames - fill, avail_capture);
                 int frames_read = 0;
-                while(frames_read < frames_to_read) {
+                while(frames_to_read != 0 && frames_read < frames_to_read) {
                     ret = snd_pcm_readi(capture_pcm, input_buffer + sizeof_sample * input_channels * frames_read, frames_to_read - frames_read);
     
                     if (ret < 0) {
@@ -356,6 +356,8 @@ int main(int argc, char *argv[]) {
         data_sample.drain = drain;
         data_sample.fill = fill;
         data_sample.valid = 1;
+
+        data_samples[sample_index] = data_sample;
 
         ++sample_index;
         if (sample_index >= sample_size) {
