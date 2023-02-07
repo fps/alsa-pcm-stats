@@ -332,7 +332,7 @@ int main(int argc, char *argv[]) {
         clock_gettime(CLOCK_MONOTONIC, &data_sample.wakeup_time);
         int avail_capture = snd_pcm_avail(capture_pcm);
 
-        data_sample.playback_available = avail_playback;
+        data_sample.capture_available = avail_capture;
 
         if (avail_capture < 0) {
             fprintf(stderr, "avail_capture: %s. frame: %d\n", snd_strerror(avail_capture), sample_index);
@@ -340,39 +340,44 @@ int main(int argc, char *argv[]) {
         }
     
         if ((avail_capture >= processing_buffer_frames) && (fill < (buffer_size_frames - processing_buffer_frames))) {
-            ret = snd_pcm_readi(capture_pcm, input_buffer, processing_buffer_frames);
-
-            data_sample.capture_read = ret;
+        // if ((avail_capture >= processing_buffer_frames) && (fill < processing_buffer_frames)) {
+            int frames_read = 0;
+            while(frames_read < processing_buffer_frames) {
+                ret = snd_pcm_readi(capture_pcm, input_buffer, processing_buffer_frames);
+                frames_read += ret;
     
-            if (ret < 0) {
-                fprintf(stderr, "snd_pcm_readi: %s. frame: %d\n", snd_strerror(ret), sample_index);
-                goto done;
-            }
-
-            fill += ret;
-
-            switch (sizeof_sample) {
-                case 2:
-                    for (int index = 0; index < ret; ++index) {
-                        for (int channel = 0; channel < min_channels; ++channel) {
-                            ringbuffer[min_channels * ((head + index) % buffer_size_frames) + channel] = ((int16_t*)input_buffer)[input_channels * index + channel] / (float)INT16_MAX;
-                        }
-                    }
-                    break;
-                case 4:
-                    for (int index = 0; index < ret; ++index) {
-                        for (int channel = 0; channel < min_channels; ++channel) {
-                            ringbuffer[min_channels * ((head + index) % buffer_size_frames) + channel] = ((int32_t*)input_buffer)[input_channels * index + channel] / (float)INT32_MAX;
-                        }
-                    }
-                    break;
-                default:
-                    fprintf(stderr, "unhandled sample format\n");
+        
+                if (ret < 0) {
+                    fprintf(stderr, "snd_pcm_readi: %s. frame: %d\n", snd_strerror(ret), sample_index);
                     goto done;
- 
+                }
+    
+    
+                switch (sizeof_sample) {
+                    case 2:
+                        for (int index = 0; index < ret; ++index) {
+                            for (int channel = 0; channel < min_channels; ++channel) {
+                                ringbuffer[min_channels * ((head + index) % buffer_size_frames) + channel] = ((int16_t*)input_buffer)[input_channels * index + channel] / (float)INT16_MAX;
+                            }
+                        }
+                        break;
+                    case 4:
+                        for (int index = 0; index < ret; ++index) {
+                            for (int channel = 0; channel < min_channels; ++channel) {
+                                ringbuffer[min_channels * ((head + index) % buffer_size_frames) + channel] = ((int32_t*)input_buffer)[input_channels * index + channel] / (float)INT32_MAX;
+                            }
+                        }
+                        break;
+                    default:
+                        fprintf(stderr, "unhandled sample format\n");
+                        goto done;
+     
+                }
             }
-
-            head = (head + ret) % buffer_size_frames;
+            data_sample.capture_read = processing_buffer_frames;
+            fill += processing_buffer_frames;
+    
+            head = (head + processing_buffer_frames) % buffer_size_frames;
 
             timespec ts;
             ts.tv_sec = 0;
@@ -381,31 +386,33 @@ int main(int argc, char *argv[]) {
         }
 
 
-        // while (true) {
+        if (fill >= processing_buffer_frames) {
             avail_playback = snd_pcm_avail(playback_pcm);
     
-            data_sample.capture_available = avail_capture;
+            data_sample.playback_available = avail_playback;
 
             if (avail_playback < 0) {
                 fprintf(stderr, "avail_playback: %s. frame: %d\n", snd_strerror(avail_playback), sample_index);
                 goto done;
             }
     
+            /*
             if (avail_playback < processing_buffer_frames || fill < processing_buffer_frames) {
                 goto playback_done;
             }
-    
+            */
+
             if (avail_playback >= processing_buffer_frames && fill >= processing_buffer_frames) {
                 switch (sizeof_sample) {
                     case 2:
-                        for (int index = 0; index < ret; ++index) {
+                        for (int index = 0; index < fill; ++index) {
                             for (int channel = 0; channel < min_channels; ++channel) {
                                 ((int16_t*)output_buffer)[output_channels * index + channel] = INT16_MAX * ringbuffer[min_channels * ((tail + index) % buffer_size_frames) + channel];
                             }
                         }
                         break;
                     case 4:
-                        for (int index = 0; index < ret; ++index) {
+                        for (int index = 0; index < fill; ++index) {
                             for (int channel = 0; channel < min_channels; ++channel) {
                                 ((int32_t*)output_buffer)[output_channels * index + channel] = INT32_MAX * ringbuffer[min_channels * ((tail + index) % buffer_size_frames) + channel];
                             }
@@ -415,21 +422,25 @@ int main(int argc, char *argv[]) {
                         fprintf(stderr, "unhandled sample format\n");
                         goto done;
                 }
-                ret = snd_pcm_writei(playback_pcm, output_buffer, processing_buffer_frames);
-    
-                tail = (tail + ret) % buffer_size_frames;
+                int frames_written = 0;
+                while (frames_written < fill) {
+                    ret = snd_pcm_writei(playback_pcm, output_buffer, fill);
+                    frames_written += ret;
 
-                data_sample.playback_written = ret;
-        
-                if (ret < 0) {
-                    fprintf(stderr, "snd_pcm_writei: %s. frame: %d\n", snd_strerror(ret), sample_index);
-                    goto done;
-                }
+                    tail = (tail + ret) % buffer_size_frames;
     
-                written += ret;
-                fill -= ret;
+            
+                    if (ret < 0) {
+                        fprintf(stderr, "snd_pcm_writei: %s. frame: %d\n", snd_strerror(ret), sample_index);
+                        goto done;
+                    }
+                }
+                data_sample.playback_written = processing_buffer_frames;
+    
+                written += processing_buffer_frames;
+                fill -= processing_buffer_frames;;
             }
-        // }
+        }
 
         playback_done:
 
