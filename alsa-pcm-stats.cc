@@ -277,6 +277,9 @@ int main(int argc, char *argv[]) {
 
     while(true) {
         ++cycles;
+
+        data &data_sample = data_samples[sample_index];
+
         snd_pcm_state_t state;
 
         state = snd_pcm_state(playback_pcm);
@@ -324,10 +327,12 @@ int main(int argc, char *argv[]) {
         }
         */
         
-        data_samples[sample_index].fill = fill;
+        data_sample.fill = fill;
 
-        clock_gettime(CLOCK_MONOTONIC, &data_samples[sample_index].wakeup_time);
+        clock_gettime(CLOCK_MONOTONIC, &data_sample.wakeup_time);
         int avail_capture = snd_pcm_avail(capture_pcm);
+
+        data_sample.playback_available = avail_playback;
 
         if (avail_capture < 0) {
             fprintf(stderr, "avail_capture: %s. frame: %d\n", snd_strerror(avail_capture), sample_index);
@@ -337,7 +342,7 @@ int main(int argc, char *argv[]) {
         if ((avail_capture >= processing_buffer_frames) && (fill < (buffer_size_frames - processing_buffer_frames))) {
             ret = snd_pcm_readi(capture_pcm, input_buffer, processing_buffer_frames);
 
-            data_samples[sample_index].capture_read = ret;
+            data_sample.capture_read = ret;
     
             if (ret < 0) {
                 fprintf(stderr, "snd_pcm_readi: %s. frame: %d\n", snd_strerror(ret), sample_index);
@@ -376,9 +381,11 @@ int main(int argc, char *argv[]) {
         }
 
 
-        while (true) {
+        // while (true) {
             avail_playback = snd_pcm_avail(playback_pcm);
     
+            data_sample.capture_available = avail_capture;
+
             if (avail_playback < 0) {
                 fprintf(stderr, "avail_playback: %s. frame: %d\n", snd_strerror(avail_playback), sample_index);
                 goto done;
@@ -412,7 +419,7 @@ int main(int argc, char *argv[]) {
     
                 tail = (tail + ret) % buffer_size_frames;
 
-                data_samples[sample_index].playback_written += ret;
+                data_sample.playback_written = ret;
         
                 if (ret < 0) {
                     fprintf(stderr, "snd_pcm_writei: %s. frame: %d\n", snd_strerror(ret), sample_index);
@@ -422,21 +429,19 @@ int main(int argc, char *argv[]) {
                 written += ret;
                 fill -= ret;
             }
-        }
+        // }
 
         playback_done:
 
         // sched_yield();
 
-        if (data_samples[sample_index].playback_written == 0 && data_samples[sample_index].capture_read == 0) {
+        if (data_sample.playback_written == 0 && data_sample.capture_read == 0) {
             usleep(busy_sleep_us);
             continue;
         }
 
-        data_samples[sample_index].playback_available = avail_playback;
-        data_samples[sample_index].capture_available = avail_capture;
   
-        data_samples[sample_index].valid = 1;
+        data_sample.valid = 1;
 
         ++sample_index;
         if (sample_index >= sample_size) {
