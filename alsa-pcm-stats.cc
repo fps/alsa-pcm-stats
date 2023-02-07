@@ -313,10 +313,10 @@ int main(int argc, char *argv[]) {
                     for (int sample_index = 0; sample_index < frames_read; ++sample_index) {
                         switch(sizeof_sample) {
                             case 2:
-                                ringbuffer[(head + sample_index) * min_channels + channel_index] = ((int16_t*)input_buffer)[sample_index * input_channels + channel_index] / (float)INT16_MAX;
+                                ringbuffer[((head + sample_index) % buffer_size_frames) * min_channels + channel_index] = ((int16_t*)input_buffer)[sample_index * input_channels + channel_index] / (float)INT16_MAX;
                                 break;
                             case 4:
-                                ringbuffer[(head + sample_index) * min_channels + channel_index] = ((int32_t*)input_buffer)[sample_index * input_channels + channel_index] / (float)INT32_MAX;
+                                ringbuffer[((head + sample_index) % buffer_size_frames) * min_channels + channel_index] = ((int32_t*)input_buffer)[sample_index * input_channels + channel_index] / (float)INT32_MAX;
                                 break;
                         }
                     }
@@ -352,10 +352,10 @@ int main(int argc, char *argv[]) {
                     for (int sample_index = 0; sample_index < frames_to_write; ++sample_index) {
                         switch(sizeof_sample) {
                             case 2:
-                                ((int16_t*)output_buffer)[sample_index * output_channels + channel_index] = INT16_MAX * ringbuffer[(tail + sample_index) * min_channels + channel_index];
+                                ((int16_t*)output_buffer)[sample_index * output_channels + channel_index] = INT16_MAX * ringbuffer[((tail + sample_index) % buffer_size_frames) * min_channels + channel_index];
                                 break;
                             case 4:
-                                ((int32_t*)output_buffer)[sample_index * output_channels + channel_index] = INT32_MAX * ringbuffer[(tail + sample_index) * min_channels + channel_index];
+                                ((int32_t*)output_buffer)[sample_index * output_channels + channel_index] = INT32_MAX * ringbuffer[((tail + sample_index) % buffer_size_frames) * min_channels + channel_index];
                                 break;
                         }
                     }
