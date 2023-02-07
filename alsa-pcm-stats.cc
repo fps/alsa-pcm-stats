@@ -280,31 +280,35 @@ int main(int argc, char *argv[]) {
        
 
         clock_gettime(CLOCK_MONOTONIC, &data_sample.wakeup_time);
-        int avail_capture = snd_pcm_avail(capture_pcm);
-
-        data_sample.capture_available = avail_capture;
-
-        if (avail_capture < 0) {
-            fprintf(stderr, "avail_capture: %s. frame: %d\n", snd_strerror(avail_capture), sample_index);
-            goto done;
-        }
-    
+   
         // if (avail_capture > 0 && (fill < (num_periods * period_size_frames - avail_capture))) {
-        if (avail_capture) {
-            int frames_read = 0;
-            while(frames_read < avail_capture) {
-                ret = snd_pcm_readi(capture_pcm, input_buffer + sizeof_sample * input_channels * frames_read, avail_capture - frames_read);
+        if (fill < processing_buffer_frames) {
+            int avail_capture = snd_pcm_avail(capture_pcm);
 
-                if (ret < 0) {
-                    fprintf(stderr, "snd_pcm_readi: %s. frame: %d\n", snd_strerror(ret), sample_index);
-                    goto done;
-                }
-                frames_read += ret;
+            if (avail_capture < 0) {
+                fprintf(stderr, "avail_capture: %s. frame: %d\n", snd_strerror(avail_capture), sample_index);
+                goto done;
             }
 
-            data_sample.capture_read = frames_read;
-            fill += frames_read;
-       }
+            data_sample.capture_available = avail_capture;
+
+            if (avail_capture > 0) {
+                int frames_to_read = std::min(processing_buffer_frames - fill, avail_capture);
+                int frames_read = 0;
+                while(frames_read < frames_to_read) {
+                    ret = snd_pcm_readi(capture_pcm, input_buffer + sizeof_sample * input_channels * frames_read, frames_to_read - frames_read);
+    
+                    if (ret < 0) {
+                        fprintf(stderr, "snd_pcm_readi: %s. frame: %d\n", snd_strerror(ret), sample_index);
+                        goto done;
+                    }
+                    frames_read += ret;
+                }
+    
+                data_sample.capture_read = frames_read;
+                fill += frames_read;
+           }
+        }
 
         if (fill >= processing_buffer_frames) {
             timespec ts;
@@ -319,13 +323,13 @@ int main(int argc, char *argv[]) {
         if (drain > 0) {
             avail_playback = snd_pcm_avail(playback_pcm);
     
-            data_sample.playback_available = avail_playback;
-
             if (avail_playback < 0) {
                 fprintf(stderr, "avail_playback: %s. frame: %d\n", snd_strerror(avail_playback), sample_index);
                 goto done;
             }
     
+            data_sample.playback_available = avail_playback;
+
             if (avail_playback > 0)  {
                 int frames_to_write = std::min(drain, avail_playback);
 
