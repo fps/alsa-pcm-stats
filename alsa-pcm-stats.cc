@@ -139,6 +139,7 @@ int main(int argc, char *argv[]) {
 
     free(dummy_heap);
 
+    if (verbose) { fprintf(stderr, "prefaulting stack memory...\n"); }
     {
         #pragma GCC diagnostic push
         #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
