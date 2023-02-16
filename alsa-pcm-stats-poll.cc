@@ -376,7 +376,7 @@ int main(int argc, char *argv[]) {
         // GRAB FRAMES IF ANY ARE AVAILABLE
 
         if (avail_capture > 0) {
-            int frames_to_read = std::min(processing_buffer_frames - fill, avail_capture);
+            int frames_to_read = std::min(period_size_frames * num_periods - fill, avail_capture);
             int frames_read = 0;
             while(frames_to_read != 0 && frames_read < frames_to_read) {
                 ret = snd_pcm_readi(capture_pcm, input_buffer + sizeof_sample * input_channels * frames_read, frames_to_read - frames_read);
@@ -407,7 +407,7 @@ int main(int argc, char *argv[]) {
         }
 
         // Simulate cpu loading when we have enough frames for a processing period
-        if (fill >= processing_buffer_frames) {
+        while (fill >= processing_buffer_frames) {
             timespec ts;
             ts.tv_sec = 0;
             ts.tv_nsec = 1e9f * ((float)sleep_percent/100.f) * ((float)processing_buffer_frames / (float)sampling_rate_hz);
