@@ -281,6 +281,7 @@ int main(int argc, char *argv[]) {
     if (verbose) { fprintf(stderr, "starting to sample...\n"); }
 
     while(true) {
+        clock_gettime(CLOCK_MONOTONIC, &data_sample.wakeup_time);
 
         data data_sample;
 
@@ -299,8 +300,6 @@ int main(int argc, char *argv[]) {
         }
        
 
-        clock_gettime(CLOCK_MONOTONIC, &data_sample.wakeup_time);
-   
         avail_playback = 0;
         avail_capture = 0;
 

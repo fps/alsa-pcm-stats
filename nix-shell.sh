@@ -1,1 +1,1 @@
-nix-shell -p boost alsa-lib gnumake
+nix-shell -p boost alsa-lib gnumake pkg-config
