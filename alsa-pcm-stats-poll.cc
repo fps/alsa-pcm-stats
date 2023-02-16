@@ -281,9 +281,9 @@ int main(int argc, char *argv[]) {
     if (verbose) { fprintf(stderr, "starting to sample...\n"); }
 
     while(true) {
-        clock_gettime(CLOCK_MONOTONIC, &data_sample.wakeup_time);
-
         data data_sample;
+
+        clock_gettime(CLOCK_MONOTONIC, &data_sample.wakeup_time);
 
         snd_pcm_state_t state;
 
