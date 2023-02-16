@@ -59,7 +59,7 @@ struct data {
         valid(0),
         playback_available(0),
         capture_available(0),
-        wakeup_time{0},
+        wakeup_time{0,0},
         poll_pollin(0),
         poll_pollout(0),
         playback_written(0),

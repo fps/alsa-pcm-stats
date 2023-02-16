@@ -59,7 +59,7 @@ struct data {
         valid(0),
         playback_available(0),
         capture_available(0),
-        wakeup_time{0},
+        wakeup_time{0, 0},
         poll_pollin(0),
         poll_pollout(0),
         playback_written(0),
@@ -252,6 +252,7 @@ int main(int argc, char *argv[]) {
     int drain = period_size_frames * num_periods;
 
     int avail_playback = snd_pcm_avail(playback_pcm);
+    int avail_capture = 0;
 
     if (avail_playback < 0) {
         fprintf(stderr, "avail_playback: %s\n", snd_strerror(avail_playback));
@@ -300,103 +301,110 @@ int main(int argc, char *argv[]) {
 
         clock_gettime(CLOCK_MONOTONIC, &data_sample.wakeup_time);
    
-        if (fill < processing_buffer_frames) {
-            // POLL
-            ret = snd_pcm_poll_descriptors(playback_pcm, pfds, playback_pfds_count);
-            if (ret != playback_pfds_count) {
-                fprintf(stderr, "wrong playback fd count\n");
-                exit(EXIT_FAILURE);
-            }
-    
-            ret = snd_pcm_poll_descriptors(capture_pcm, pfds+playback_pfds_count, capture_pfds_count);
-            if (ret != capture_pfds_count) {
-                fprintf(stderr, "wrong playback fd count\n");
-                exit(EXIT_FAILURE);
-            }
-    
-            ret = poll(pfds, playback_pfds_count + capture_pfds_count, 100000);
-            if (ret < 0) {
-                fprintf(stderr, "poll: %s\n", strerror(ret));
-                break;
-            }
-    
-            if (ret == 0) {
-                fprintf(stderr, "poll timeout\n");
-                break;
-            }
-    
-            // PROCESS REVENTS
-    
-            unsigned short revents = 0;
-    
-            ret = snd_pcm_poll_descriptors_revents(playback_pcm, pfds, playback_pfds_count, &revents);
-            if (ret < 0) {
-                fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
-                break;
-            }
-    
-    
-            if (revents & POLLOUT) {
-                data_samples[sample_index].poll_pollout = 1;
-            }
-    
-            revents = 0;
-    
-            ret = snd_pcm_poll_descriptors_revents(capture_pcm, pfds + playback_pfds_count, capture_pfds_count, &revents);
-            if (ret < 0) {
-                fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
-                break;
-            }
-    
-            if (revents & POLLIN) {
-                data_samples[sample_index].poll_pollin = 1;
-            }
+        avail_playback = 0;
+        avail_capture = 0;
 
-            int avail_capture = snd_pcm_avail_update(capture_pcm);
+        // POLL
 
-            if (avail_capture < 0) {
-                fprintf(stderr, "avail_capture: %s. frame: %d\n", snd_strerror(avail_capture), sample_index);
-                goto done;
-            }
+        ret = snd_pcm_poll_descriptors(playback_pcm, pfds, playback_pfds_count);
+        if (ret != playback_pfds_count) {
+            fprintf(stderr, "wrong playback fd count\n");
+            exit(EXIT_FAILURE);
+        }
 
-            avail_playback = snd_pcm_avail_update(playback_pcm);
-    
-            if (avail_playback < 0) {
-                fprintf(stderr, "avail_playback: %s. frame: %d\n", snd_strerror(avail_playback), sample_index);
-                goto done;
-            }
-            data_sample.capture_available = avail_capture;
+        ret = snd_pcm_poll_descriptors(capture_pcm, pfds+playback_pfds_count, capture_pfds_count);
+        if (ret != capture_pfds_count) {
+            fprintf(stderr, "wrong playback fd count\n");
+            exit(EXIT_FAILURE);
+        }
 
-            if (avail_capture > 0) {
-                int frames_to_read = std::min(processing_buffer_frames - fill, avail_capture);
-                int frames_read = 0;
-                while(frames_to_read != 0 && frames_read < frames_to_read) {
-                    ret = snd_pcm_readi(capture_pcm, input_buffer + sizeof_sample * input_channels * frames_read, frames_to_read - frames_read);
-    
-                    if (ret < 0) {
-                        fprintf(stderr, "snd_pcm_readi: %s. frame: %d\n", snd_strerror(ret), sample_index);
-                        goto done;
-                    }
-                    frames_read += ret;
+        ret = poll(pfds, playback_pfds_count + capture_pfds_count, 100000);
+        if (ret < 0) {
+            fprintf(stderr, "poll: %s\n", strerror(ret));
+            break;
+        }
+
+        if (ret == 0) {
+            fprintf(stderr, "poll timeout\n");
+            break;
+        }
+
+        // PROCESS REVENTS
+
+        unsigned short revents = 0;
+
+        ret = snd_pcm_poll_descriptors_revents(playback_pcm, pfds, playback_pfds_count, &revents);
+        if (ret < 0) {
+            fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
+            break;
+        }
+
+
+        if (revents & POLLOUT) {
+            data_sample.poll_pollout = 1;
+        }
+
+        revents = 0;
+
+        ret = snd_pcm_poll_descriptors_revents(capture_pcm, pfds + playback_pfds_count, capture_pfds_count, &revents);
+        if (ret < 0) {
+            fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
+            break;
+        }
+
+        if (revents & POLLIN) {
+            data_sample.poll_pollin = 1;
+        }
+
+        // UPDATE AVAILABLE FRAMES
+
+        avail_capture = snd_pcm_avail_update(capture_pcm);
+        data_sample.capture_available = avail_capture;
+
+        if (avail_capture < 0) {
+            fprintf(stderr, "avail_capture: %s. frame: %d\n", snd_strerror(avail_capture), sample_index);
+            goto done;
+        }
+
+        avail_playback = snd_pcm_avail_update(playback_pcm);
+        data_sample.playback_available = avail_playback;
+
+        if (avail_playback < 0) {
+            fprintf(stderr, "avail_playback: %s. frame: %d\n", snd_strerror(avail_playback), sample_index);
+            goto done;
+        }
+
+        // GRAB FRAMES IF ANY ARE AVAILABLE
+
+        if (avail_capture > 0) {
+            int frames_to_read = std::min(processing_buffer_frames - fill, avail_capture);
+            int frames_read = 0;
+            while(frames_to_read != 0 && frames_read < frames_to_read) {
+                ret = snd_pcm_readi(capture_pcm, input_buffer + sizeof_sample * input_channels * frames_read, frames_to_read - frames_read);
+
+                if (ret < 0) {
+                    fprintf(stderr, "snd_pcm_readi: %s. frame: %d\n", snd_strerror(ret), sample_index);
+                    goto done;
                 }
-    
-                data_sample.capture_read = frames_read;
-                fill += frames_read;
+                frames_read += ret;
+            }
 
-                for (int channel_index = 0; channel_index < min_channels; ++channel_index) {
-                    for (int sample_index = 0; sample_index < frames_read; ++sample_index) {
-                        switch(sizeof_sample) {
-                            case 2:
-                                ringbuffer[((head + sample_index) % buffer_size_frames) * min_channels + channel_index] = ((int16_t*)input_buffer)[sample_index * input_channels + channel_index] / (float)INT16_MAX;
-                                break;
-                            case 4:
-                                ringbuffer[((head + sample_index) % buffer_size_frames) * min_channels + channel_index] = ((int32_t*)input_buffer)[sample_index * input_channels + channel_index] / (float)INT32_MAX;
-                                break;
-                        }
+            data_sample.capture_read = frames_read;
+            fill += frames_read;
+
+            for (int channel_index = 0; channel_index < min_channels; ++channel_index) {
+                for (int sample_index = 0; sample_index < frames_read; ++sample_index) {
+                    switch(sizeof_sample) {
+                        case 2:
+                            ringbuffer[((head + sample_index) % buffer_size_frames) * min_channels + channel_index] = ((int16_t*)input_buffer)[sample_index * input_channels + channel_index] / (float)INT16_MAX;
+                            break;
+                        case 4:
+                            ringbuffer[((head + sample_index) % buffer_size_frames) * min_channels + channel_index] = ((int32_t*)input_buffer)[sample_index * input_channels + channel_index] / (float)INT32_MAX;
+                            break;
                     }
                 }
-                head = (head + frames_read) % buffer_size_frames;
             }
+            head = (head + frames_read) % buffer_size_frames;
         }
 
         // Simulate cpu loading when we have enough frames for a processing period
@@ -412,8 +420,6 @@ int main(int argc, char *argv[]) {
  
         if (drain > 0) {
    
-            data_sample.playback_available = avail_playback;
-
             if (avail_playback > 0)  {
                 int frames_to_write = std::min(drain, avail_playback);
 
