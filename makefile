@@ -2,5 +2,5 @@ CXXFLAGS ?= -march=native -O3 -Wall -pedantic -pthread -lboost_program_options -
 
 .phony: all
 
-all: alsa-pcm-stats
+all: alsa-pcm-stats-busy-wait alsa-pcm-stats-poll
 
