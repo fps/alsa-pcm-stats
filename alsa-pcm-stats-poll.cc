@@ -106,30 +106,30 @@ int main(int argc, char *argv[]) {
 
     int ret;
 
-    if (verbose) { fprintf(stderr, "tuning memory allocator...\n"); }
+    if (verbose) { fprintf(stderr, "Tuning memory allocator...\n"); }
     ret = mallopt(M_MMAP_MAX, 0);
     if (ret != 1) {
-        fprintf(stderr, "mallopt M_MMAP_MAX: %s\n", strerror(ret));
+        fprintf(stderr, "Error: mallopt M_MMAP_MAX: %s\n", strerror(ret));
         exit(EXIT_FAILURE);
     }
 
     ret = mallopt(M_TRIM_THRESHOLD, -1);
     if (ret != 1) {
-        fprintf(stderr, "mallopt M_TRIM_THRESHOLD: %s\n", strerror(ret));
+        fprintf(stderr, "Error: mallopt M_TRIM_THRESHOLD: %s\n", strerror(ret));
         exit(EXIT_FAILURE);
     }
 
-    if (verbose) { fprintf(stderr, "locking memory...\n"); }
+    if (verbose) { fprintf(stderr, "Locking memory...\n"); }
     ret = mlockall(MCL_CURRENT | MCL_FUTURE);
     if (ret != 0) {
-        fprintf(stderr, "mlockall: %s\n", strerror(ret));
+        fprintf(stderr, "Error: mlockall: %s\n", strerror(ret));
         exit(EXIT_FAILURE);
     }
   
-    if (verbose) { fprintf(stderr, "prefaulting heap memory...\n"); }
+    if (verbose) { fprintf(stderr, "Prefaulting heap memory...\n"); }
     char *dummy_heap = (char*)malloc(1024 * 1024 * prefault_heap_size_mb);
     if (!dummy_heap) {
-        fprintf(stderr, "failed to allocate prefaulting heap memory\n");
+        fprintf(stderr, "Failed to allocate prefaulting heap memory\n");
         exit(EXIT_FAILURE);
     }
 
@@ -139,7 +139,7 @@ int main(int argc, char *argv[]) {
 
     free(dummy_heap);
 
-    if (verbose) { fprintf(stderr, "prefaulting stack memory...\n"); }
+    if (verbose) { fprintf(stderr, "Prefaulting stack memory...\n"); }
     {
         #pragma GCC diagnostic push
         #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
@@ -154,7 +154,7 @@ int main(int argc, char *argv[]) {
     // buffer_size_samples = std::max(input_channels, output_channels) * buffer_size_frames;
 
     if (2 * processing_buffer_frames > buffer_size_frames) {
-        fprintf(stderr, "period-size * number-of-periods < 2 * processing-buffer-size.\n");
+        fprintf(stderr, "Error: period-size * number-of-periods < 2 * processing-buffer-size.\n");
         exit(EXIT_FAILURE);
     }
 
@@ -179,65 +179,65 @@ int main(int argc, char *argv[]) {
     }
 
 
-    if (verbose) { fprintf(stderr, "setting SCHED_FIFO at priority: %d\n", priority); }
+    if (verbose) { fprintf(stderr, "Setting SCHED_FIFO at priority: %d\n", priority); }
 
     // #################### scheduling and priority setup
     struct sched_param pthread_params;
     pthread_params.sched_priority = priority;
     ret = pthread_setschedparam(pthread_self(), SCHED_FIFO, &pthread_params);
     if (ret != 0) {
-        fprintf(stderr, "setschedparam: %s\n", strerror(ret));
+        fprintf(stderr, "Error: setschedparam: %s\n", strerror(ret));
         exit(EXIT_FAILURE);
     }
 
     // #################### alsa pcm device open
-    if (verbose) { fprintf(stderr, "setting up playback device...\n"); }
+    if (verbose) { fprintf(stderr, "Setting up playback device...\n"); }
 
     snd_pcm_t *playback_pcm;
     ret = snd_pcm_open(&playback_pcm, pcm_device_name.c_str(), SND_PCM_STREAM_PLAYBACK, SND_PCM_NONBLOCK);
     if (ret < 0) {
-        fprintf(stderr, "snd_pcm_open: %s\n", snd_strerror(ret));
+        fprintf(stderr, "Error: snd_pcm_open: %s\n", snd_strerror(ret));
         exit(EXIT_FAILURE);
     }
 
     ret = setup_pcm_device(playback_pcm, output_channels);
     if (ret != 0) {
-        fprintf(stderr, "setup_pcm_device: %s\n", "Failed to setup playback device");
+        fprintf(stderr, "Error: setup_pcm_device: %s\n", "Failed to setup playback device");
         exit(EXIT_FAILURE);
     }
 
-    if (verbose) { fprintf(stderr, "setting up capture device...\n"); }
+    if (verbose) { fprintf(stderr, "Setting up capture device...\n"); }
 
     snd_pcm_t *capture_pcm;
     ret = snd_pcm_open(&capture_pcm, pcm_device_name.c_str(), SND_PCM_STREAM_CAPTURE, SND_PCM_NONBLOCK);
     if (ret < 0) {
-        fprintf(stderr, "snd_pcm_open: %s\n", snd_strerror(ret));
+        fprintf(stderr, "Error: snd_pcm_open: %s\n", snd_strerror(ret));
         exit(EXIT_FAILURE);
     }
 
     ret = setup_pcm_device(capture_pcm, input_channels);
     if (ret != 0) {
-        fprintf(stderr, "setup_pcm_device: %s\n", "Failed to setup capture device");
+        fprintf(stderr, "Error: setup_pcm_device: %s\n", "Failed to setup capture device");
         exit(EXIT_FAILURE);
     }
 
     // #################### alsa pcm device linking
     ret = snd_pcm_link(playback_pcm, capture_pcm);
     if (ret < 0) {
-        fprintf(stderr, "snd_pcm_link: %s\n", snd_strerror(ret));
+        fprintf(stderr, "Error: snd_pcm_link: %s\n", snd_strerror(ret));
         exit(EXIT_FAILURE);
     }
 
     // #################### alsa pcm device poll descriptors
     int playback_pfds_count = snd_pcm_poll_descriptors_count(playback_pcm);
     if (playback_pfds_count < 1) {
-        fprintf(stderr, "poll descriptors count less than one\n");
+        fprintf(stderr, "Error: poll descriptors count less than one\n");
         return EXIT_FAILURE;
     }
 
     int capture_pfds_count = snd_pcm_poll_descriptors_count(capture_pcm);
     if (capture_pfds_count < 1) {
-        fprintf(stderr, "poll descriptors count less than one\n");
+        fprintf(stderr, "Error: poll descriptors count less than one\n");
         return EXIT_FAILURE;
     }
 
@@ -246,7 +246,7 @@ int main(int argc, char *argv[]) {
 
 
     // #################### prefill output buffer
-    if (verbose) { fprintf(stderr, "filling output buffer with zeros\n"); }
+    if (verbose) { fprintf(stderr, "Filling output buffer with zeros\n"); }
 
     int fill = 0;
     int drain = period_size_frames * num_periods;
@@ -255,12 +255,12 @@ int main(int argc, char *argv[]) {
     int avail_capture = 0;
 
     if (avail_playback < 0) {
-        fprintf(stderr, "avail_playback: %s\n", snd_strerror(avail_playback));
+        fprintf(stderr, "Error: avail_playback: %s\n", snd_strerror(avail_playback));
         exit(EXIT_FAILURE);
     }
 
     if (avail_playback != drain) {
-        fprintf(stderr, "no full buffer available\n");
+        fprintf(stderr, "Error: no full buffer available\n");
         exit(EXIT_FAILURE);
     }
 
@@ -268,9 +268,11 @@ int main(int argc, char *argv[]) {
     while (drain > 0) {
         ret = snd_pcm_writei(playback_pcm, output_buffer, drain);
         if (ret < 0) {
-            fprintf(stderr, "snd_pcm_writei: %s\n", snd_strerror(ret));
+            fprintf(stderr, "Error: snd_pcm_writei: %s\n", snd_strerror(ret));
             exit(EXIT_FAILURE);
         }
+
+        if (verbose) { fprintf(stderr, "Wrote: %d frames\n", ret); }
 
         drain -= ret;
     }
@@ -278,7 +280,7 @@ int main(int argc, char *argv[]) {
     uint64_t cycles = 0;
     std::vector<data> data_samples(sample_size);
     int sample_index = 0;
-    if (verbose) { fprintf(stderr, "starting to sample...\n"); }
+    if (verbose) { fprintf(stderr, "Starting to sample...\n"); }
 
     while(true) {
         data data_sample;
@@ -289,13 +291,13 @@ int main(int argc, char *argv[]) {
 
         state = snd_pcm_state(playback_pcm);
         if (state == SND_PCM_STATE_XRUN) {
-            fprintf(stderr, "playback xrun\n");
+            fprintf(stderr, "Error: playback xrun\n");
             goto done;
         }
 
         state = snd_pcm_state(capture_pcm);
         if (state == SND_PCM_STATE_XRUN) {
-            fprintf(stderr, "capture xrun\n");
+            fprintf(stderr, "Error: capture xrun\n");
             goto done;
         }
        
@@ -307,24 +309,24 @@ int main(int argc, char *argv[]) {
 
         ret = snd_pcm_poll_descriptors(playback_pcm, pfds, playback_pfds_count);
         if (ret != playback_pfds_count) {
-            fprintf(stderr, "wrong playback fd count\n");
+            fprintf(stderr, "Error: wrong playback fd count\n");
             exit(EXIT_FAILURE);
         }
 
         ret = snd_pcm_poll_descriptors(capture_pcm, pfds+playback_pfds_count, capture_pfds_count);
         if (ret != capture_pfds_count) {
-            fprintf(stderr, "wrong playback fd count\n");
+            fprintf(stderr, "Error: wrong capture fd count\n");
             exit(EXIT_FAILURE);
         }
 
         ret = poll(pfds, playback_pfds_count + capture_pfds_count, 100000);
         if (ret < 0) {
-            fprintf(stderr, "poll: %s\n", strerror(ret));
+            fprintf(stderr, "Error: poll: %s\n", strerror(ret));
             break;
         }
 
         if (ret == 0) {
-            fprintf(stderr, "poll timeout\n");
+            fprintf(stderr, "Error: poll timeout\n");
             break;
         }
 
@@ -334,7 +336,7 @@ int main(int argc, char *argv[]) {
 
         ret = snd_pcm_poll_descriptors_revents(playback_pcm, pfds, playback_pfds_count, &revents);
         if (ret < 0) {
-            fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
+            fprintf(stderr, "Error: snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
             break;
         }
 
@@ -347,7 +349,7 @@ int main(int argc, char *argv[]) {
 
         ret = snd_pcm_poll_descriptors_revents(capture_pcm, pfds + playback_pfds_count, capture_pfds_count, &revents);
         if (ret < 0) {
-            fprintf(stderr, "snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
+            fprintf(stderr, "Error: snd_pcm_poll_descriptors_revents: %s\n", strerror(ret));
             break;
         }
 
@@ -361,7 +363,7 @@ int main(int argc, char *argv[]) {
         data_sample.capture_available = avail_capture;
 
         if (avail_capture < 0) {
-            fprintf(stderr, "avail_capture: %s. frame: %d\n", snd_strerror(avail_capture), sample_index);
+            fprintf(stderr, "Error: avail_capture: %s. frame: %d\n", snd_strerror(avail_capture), sample_index);
             goto done;
         }
 
@@ -369,7 +371,7 @@ int main(int argc, char *argv[]) {
         data_sample.playback_available = avail_playback;
 
         if (avail_playback < 0) {
-            fprintf(stderr, "avail_playback: %s. frame: %d\n", snd_strerror(avail_playback), sample_index);
+            fprintf(stderr, "Error: avail_playback: %s. frame: %d\n", snd_strerror(avail_playback), sample_index);
             goto done;
         }
 
@@ -382,7 +384,7 @@ int main(int argc, char *argv[]) {
                 ret = snd_pcm_readi(capture_pcm, input_buffer + sizeof_sample * input_channels * frames_read, frames_to_read - frames_read);
 
                 if (ret < 0) {
-                    fprintf(stderr, "snd_pcm_readi: %s. frame: %d\n", snd_strerror(ret), sample_index);
+                    fprintf(stderr, "Error: snd_pcm_readi: %s. frame: %d\n", snd_strerror(ret), sample_index);
                     goto done;
                 }
                 frames_read += ret;
@@ -443,7 +445,7 @@ int main(int argc, char *argv[]) {
                     frames_written += ret;
 
                     if (ret < 0) {
-                        fprintf(stderr, "snd_pcm_writei: %s. frame: %d\n", snd_strerror(ret), sample_index);
+                        fprintf(stderr, "Error: snd_pcm_writei: %s. frame: %d\n", snd_strerror(ret), sample_index);
                         goto done;
                     }
                 }
@@ -475,7 +477,7 @@ int main(int argc, char *argv[]) {
 
     done: 
 
-    if (verbose) { fprintf(stderr, "done sampling...\n"); } 
+    if (verbose) { fprintf(stderr, "Done sampling...\n"); } 
 
     if (show_header) {
         printf("   tv.sec   tv.nsec avail-w avail-r POLLOUT POLLIN written    read total-w total-r diff fill drain       cycles\n");
@@ -488,7 +490,7 @@ int main(int argc, char *argv[]) {
         data data_sample = data_samples[sample_index];
         total_written += data_sample.playback_written;
         total_read += data_sample.capture_read;
-        printf("%09ld %09ld %7d %7d %7d %6d %7d %7d %7ld %7ld %4ld %4d %5d %12ld\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available, data_sample.poll_pollout, data_sample.poll_pollin, data_sample.playback_written, data_sample.capture_read, total_written, total_read, total_read - total_written, data_sample.fill, data_sample.drain, data_sample.cycles);
+        printf("%09ld.%09ld %7d %7d %7d %6d %7d %7d %7ld %7ld %4ld %4d %5d %12ld\n", data_sample.wakeup_time.tv_sec, data_sample.wakeup_time.tv_nsec, data_sample.playback_available, data_sample.capture_available, data_sample.poll_pollout, data_sample.poll_pollin, data_sample.playback_written, data_sample.capture_read, total_written, total_read, total_read - total_written, data_sample.fill, data_sample.drain, data_sample.cycles);
         if (!data_sample.valid) { break; }
     }
 
